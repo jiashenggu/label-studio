@@ -410,6 +410,7 @@ const Model = types
             area.setValue(tag);
           }
         }
+        console.log("area: ", area)
         return area;
       },
 
@@ -439,7 +440,7 @@ const Model = types
             [labels.valueType]: labels.selectedValues(),
           };
         }
-
+        
         return ff.isActive(ff.FF_MULTIPLE_LABELS_REGIONS)
           ? self.annotation.createResult(value, labeling, control, self, false, additionalStates)
           : self.annotation.createResult(value, labeling, control, self, false);

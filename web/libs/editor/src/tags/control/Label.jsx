@@ -256,6 +256,38 @@ const Model = types
           region.updateSpans?.();
         }
       });
+      const tool = Object.values(self.parent?.tools || {})[0];
+      // ✅ 自动创建默认 bbox（仅对 Video 对象）
+      if (self.selected) {
+        const video = self.annotation.names.get(self.parent.toname);
+        if (video && video.addVideoRegion) {
+          const frame = video.frame;
+          // ✅ 防止重复创建
+          const existingRegions = self.annotation.regionStore.regions.filter(
+            (reg) =>
+              reg.type === "videorectangleregion" &&
+              reg.isInLifespan(frame) &&
+              reg.hasLabel(self.value)
+          );
+
+          if (existingRegions.length > 0) {
+            return; // 已存在，跳过
+          }
+          requestAnimationFrame(() => {
+            const defaultRegion = {
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 1,
+            };
+            const area = video.addVideoRegion(defaultRegion);
+            if (area) {
+              area.setSelected(true);
+              area.onClickRegion?.(); // 模拟点击，进入编辑模式
+            }
+          });
+        }
+      }
     },
 
     setVisible(val) {

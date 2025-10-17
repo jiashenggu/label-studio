@@ -80,6 +80,29 @@ const Model = types
     },
 
     addKeypoint(frame) {
+      const forbidLabel = 'Subgoal';
+      const prev = self.closestKeypoint(frame, true);
+      if (prev) {
+        // 收集所有 region 的 keypoint，并带上 region 本身
+        const allEntries = self.object.regs.flatMap(r =>
+          (r.sequence || []).map(kp => ({ kp, region: r }))
+        );
+
+        // 只要区间里出现过 forbidLabel 的 keypoint 就禁止插入
+        const hasForbiddenInBetween = allEntries.some(
+          ({ kp, region }) =>
+            kp.frame > prev.frame &&
+            kp.frame < frame &&
+            region.labelName === forbidLabel
+        );
+
+        if (hasForbiddenInBetween) {
+          console.log(
+            `[VideoRegion] 帧 ${prev.frame} ~ ${frame} 之间已存在 label="${forbidLabel}" 的关键帧，禁止插入`
+          );
+          return; // 放弃添加
+        }
+      }
       const sequence = Array.from(self.sequence);
       const closestKeypoint = self.closestKeypoint(frame);
       const newKeypoint = {

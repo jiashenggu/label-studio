@@ -282,7 +282,6 @@ const Model = types
             };
             const area = video.addVideoRegion(defaultRegion);
             if (area) {
-              area.setSelected(true);
               area.onClickRegion?.(); // 模拟点击，进入编辑模式
             }
           });

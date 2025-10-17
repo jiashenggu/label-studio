@@ -349,7 +349,7 @@ const HtxVideoView = ({ item, store }) => {
   const handleVideoLoad = useCallback(
     ({ length, videoDimensions }) => {
       setLoaded(true);
-      setZoom(videoDimensions.ratio);
+      setZoom(videoDimensions.ratio + 1);
       setVideoDimensions(videoDimensions);
       setVideoLength(length);
       item.setOnlyFrame(1);
@@ -569,7 +569,7 @@ const HtxVideoView = ({ item, store }) => {
             altHopSize={store.settings.videoHopSize}
             allowFullscreen={false}
             fullscreen={isFullScreen}
-            defaultStepSize={16}
+            defaultStepSize={5}
             disableView={!supportsTimelineRegions && !supportsRegions}
             framerate={item.framerate}
             controls={{ FramesControl: true }}

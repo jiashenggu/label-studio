@@ -17,6 +17,7 @@ import { Checkbox, Select } from "@humansignal/ui";
 import { Block, Elem, useBEM } from "../../../utils/bem";
 import { TimeDurationControl } from "../../TimeDurationControl/TimeDurationControl";
 import { TimelineRegionEditor } from "./TimelineRegionEditor";
+import { VideoRegionEditor } from './VideoRegionEditor';
 import "./RegionEditor.scss";
 import type { MSTRegion } from "../../../stores/types";
 
@@ -54,7 +55,8 @@ const IconMapping = {
 const RegionEditorComponent: FC<RegionEditorProps> = ({ region }) => {
   const isAudioRegion = region.type === "audioregion";
   const isTimelineRegion = region.type === "timelineregion";
-  const Component = isTimelineRegion ? TimelineRegionEditor : isAudioRegion ? AudioRegionProperties : RegionProperties;
+  const isVideoRegion = region.type === "videorectangleregion";
+  const Component = isVideoRegion ? VideoRegionEditor : isTimelineRegion ? TimelineRegionEditor : isAudioRegion ? AudioRegionProperties : RegionProperties;
 
   return (
     <Block name="region-editor" mod={{ disabled: region.isReadOnly() }}>

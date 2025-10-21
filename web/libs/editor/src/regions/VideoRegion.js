@@ -39,6 +39,11 @@ const Model = types
     },
   }))
   .actions((self) => ({
+    updateKeypointOptions(frame, options) {
+      self.sequence = self.sequence.map(kp =>
+        kp.frame === frame ? { ...kp, options } : kp
+      );
+    },
     updateShape() {
       throw new Error("Method updateShape must be implemented on a shape level");
     },

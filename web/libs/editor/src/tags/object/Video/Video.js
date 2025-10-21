@@ -92,7 +92,21 @@ const TagAttrs = types.model({
   muted: false,
   defaultplaybackspeed: types.optional(types.union(types.string, types.number), "1"),
   minplaybackspeed: types.optional(types.union(types.string, types.number), "0.25"),
-});
+
+  resolver: types.maybeNull(types.string), 
+})
+.views(self => ({
+  // getter：把 resolver 当 optionList 解析
+  get optionList() {
+    if (!self.resolver) return [];
+    try { return JSON.parse(self.resolver); }
+    catch (e) {
+      console.warn('[Video] resolver JSON 解析失败', e);
+      return [];
+    }
+  },
+}));
+
 
 const Model = types
   .model({
@@ -410,7 +424,6 @@ const Model = types
             area.setValue(tag);
           }
         }
-        console.log("area: ", area)
         return area;
       },
 

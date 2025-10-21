@@ -1,0 +1,54 @@
+.container {
+  display: grid;
+  width: 100%;
+  grid-gap: 4px;
+  grid-template-columns: repeat(var(--col-count), minmax(0, 1fr));
+}
+
+.labelText {
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.input {
+  display: block;
+  border: 1px solid var(--color-neutral-border);
+  border-radius: 4px;
+  padding: 0 0 0 8px;
+  width: 80px;
+  font-size: 14px;
+  text-align: right;
+
+  &[readonly] {
+    color: var(--color-neutral-content-subtlest);
+    cursor: default;
+
+    &:focus {
+      outline: none;
+    }
+  }
+}
+
+/* ========= 新增：与旧样式无缝衔接 ========= */
+.row {
+  /* 让 frame 输入框 + 选项 Select 在同一行 */
+  display: contents;          /* 直接复用 .container 的 grid 列定义 */
+}
+
+.label {                      /* 复用你已有的 .labelText / .input 样式 */
+  display: flex;
+  flex-direction: column;     /* 上下结构：文字在上，控件在下 */
+  gap: 2px;
+}
+
+/* 多选框本身 */
+.multiSelect {
+  width: 100%;                /* 占满 grid 分配给你的那一列 */
+  font-size: 14px;
+}
+
+/* （可选）如果文字太长，让选项框出现横向滚动 */
+.multiSelect .ant-select-selector {
+  max-width: 100%;
+  overflow: auto;
+}

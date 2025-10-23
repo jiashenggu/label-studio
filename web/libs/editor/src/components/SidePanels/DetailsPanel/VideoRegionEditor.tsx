@@ -4,7 +4,7 @@ import { observer } from 'mobx-react';
 import type { Instance } from 'mobx-state-tree';
 import { VideoRegion } from '../../../regions/VideoRegion';
 import styles from './TimelineRegionEditor.module.scss';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 type VideoRegionModel = Instance<typeof VideoRegion>;
 const { Option } = Select;
@@ -60,6 +60,12 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
     /* 存每一行自定义文本：{ [index]: string } */
     const [otherText, setOtherText] = useState<Record<number, string>>({});
 
+        /* 记录哪一行需要自动聚焦 */
+    const [needFocus, setNeedFocus] = useState<number | null>(null);
+    const otherInputRef = useRef<HTMLInputElement>(null);
+
+    /* 当选到 __other__ 时，标记需要聚焦 */
+
     /* 统一构造“下拉框选项”：正常选项 + 一个 other */
     const buildOptions = (idx: number) => {
       const base = optionList.map((o) => (
@@ -88,15 +94,25 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
           delete clone[index];
           return clone;
         });
+        
       }
 
       /* 如果新选了 other，先塞一个空字符串占位，方便下面输入框受控 */
       if (!hadOther && hasOther) {
         setOtherText((o) => ({ ...o, [index]: '' }));
+        setNeedFocus(index); 
       }
 
       onUpdateOptions(index, next);
     };
+
+        /* 渲染完成后聚焦，然后立即把标记清掉 */
+    useEffect(() => {
+      if (needFocus !== null) {
+        otherInputRef.current?.focus();   // ← 直接聚焦原生元素
+        setNeedFocus(null);
+      }
+    }, [needFocus]);
 
     /* 自定义文本输入完，把 __other__ 替换成真实文本 */
     const handleOtherInputBlur = (index: number) => {
@@ -152,6 +168,7 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
               {showOtherInput && (
                 <div style={{ marginTop: 4 }}>
                   <Input
+                    ref={otherInputRef} 
                     size="small"
                     placeholder="请输入自定义内容"
                     value={otherText[idx]}

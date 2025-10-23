@@ -259,7 +259,7 @@ This software is licensed under the [Apache 2.0 LICENSE](/LICENSE) © [Heartex](
 <img src="https://user-images.githubusercontent.com/12534576/192582529-cf628f58-abc5-479b-a0d4-8a3542a4b35e.png" title="Hey everyone!" width="180" />
 
 
-forward to public url by ngrok
+for dev
 ```bash
-CSRF_TRUSTED_ORIGINS=https://bethany-noncoalescing-lindy.ngrok-free.dev USE_X_FORWARDED_HOST=trueUSE_X_FORWARDED_PORT=trueSECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https  python label_studio/manage.py runserver
+CSRF_TRUSTED_ORIGINS="https://localhost:8010" USE_X_FORWARDED_HOST=trueUSE_X_FORWARDED_PORT=trueSECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https  python label_studio/manage.py runserver
 ```

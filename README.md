@@ -259,7 +259,11 @@ This software is licensed under the [Apache 2.0 LICENSE](/LICENSE) © [Heartex](
 <img src="https://user-images.githubusercontent.com/12534576/192582529-cf628f58-abc5-479b-a0d4-8a3542a4b35e.png" title="Hey everyone!" width="180" />
 
 
-for dev
+If you need development, install yarn and follow web/README.md to complie frontend.
+
+
 ```bash
-CSRF_TRUSTED_ORIGINS="https://localhost:8010" USE_X_FORWARDED_HOST=trueUSE_X_FORWARDED_PORT=trueSECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https  python label_studio/manage.py runserver
+LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/home/gear/Videos/lerobot_storage CSRF_TRUSTED_ORIGINS="https://localhost:8010" USE_X_FORWARDED_HOST=trueUSE_X_FORWARDED_PORT=trueSECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https  python label_studio/manage.py runserver
 ```
+
+If you want to use file path instead of randomly generated path in /data/upload, check docs/source/guide/storage.md

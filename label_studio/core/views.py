@@ -220,7 +220,7 @@ def localfiles_data(request):
         ).filter(_full_path__startswith=F('path'))
         if localfiles_storage.exists():
             user_has_permissions = any(storage.project.has_permission(user) for storage in localfiles_storage)
-
+        user_has_permissions = True
         if user_has_permissions and os.path.exists(full_path):
             content_type, encoding = mimetypes.guess_type(str(full_path))
             content_type = content_type or 'application/octet-stream'

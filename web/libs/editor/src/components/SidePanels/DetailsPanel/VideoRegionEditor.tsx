@@ -75,7 +75,7 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
       ));
       base.push(
         <Option key="__other__" value="__other__">
-          其他（自定义）
+          Customize
         </Option>
       );
       return base;
@@ -170,7 +170,7 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
                   <Input
                     ref={otherInputRef} 
                     size="small"
-                    placeholder="请输入自定义内容"
+                    placeholder="Please enter custom text"
                     value={otherText[idx]}
                     onChange={(e) =>
                       setOtherText((o) => ({ ...o, [idx]: e.target.value }))

@@ -149,7 +149,67 @@ class Project(ProjectMixin, models.Model):
         _('label config'),
         blank=True,
         null=True,
-        default='<View></View>',
+        default='''<View style="display: flex; flex-wrap: wrap;">
+  <!-- 第一行：3 路视频 -->
+  <View style="width: 30%; margin-right: 2em;">
+    <Video name="right_ego_view"
+           value="$right_ego_view"
+           sync="ego_view"
+           timelineHeight="250"
+           height="500"
+           frameRate="15.0"
+           resolver='[{"value":"walk","label":"walk"},
+                       {"value":"run","label":"run"},
+                       {"value":"jump","label":"jump"}]'/>
+  </View>
+
+  <View style="width: 30%; margin-right: 2em;">
+    <Video name="left_wrist_view"
+           value="$left_wrist_view"
+           sync="ego_view"
+           timelineHeight="250"
+           height="500"
+           frameRate="15.0"
+           resolver='[{"value":"walk","label":"walk"},
+                       {"value":"run","label":"run"},
+                       {"value":"jump","label":"jump"}]'/>
+  </View>
+
+  <View style="width: 30%; margin-right: 2em;">
+    <Video name="right_wrist_view"
+           value="$right_wrist_view"
+           sync="ego_view"
+           timelineHeight="250"
+           height="500"
+           frameRate="15.0"
+           resolver='[{"value":"walk","label":"walk"},
+                       {"value":"run","label":"run"},
+                       {"value":"jump","label":"jump"}]'/>
+  </View>
+
+  <!-- 第二行：ego_view 独占一行 -->
+  <View style="width: 100%; margin-top: 2em;">
+    <Video name="ego_view"
+           value="$ego_view"
+           sync="ego_view"
+           timelineHeight="250"
+           height="500"
+           frameRate="15.0"
+           resolver='[{"value":"walk","label":"walk"},
+                       {"value":"run","label":"run"},
+                       {"value":"jump","label":"jump"}]'/>
+  </View>
+<VideoRectangle name="box"
+                toName="ego_view"
+                perFrame="true"/>
+<Labels name="videoLabels"
+        toName="ego_view,right_ego_view,left_wrist_view,right_wrist_view">
+  <Label value="Subgoal"    background="#944BFF"/>
+  <Label value="Suboptimal" background="#FFA500"/>
+  <Label value="Failure"    background="#FF0000"/>
+</Labels>
+</View>
+''',
         help_text='Label config in XML format. See more about it in documentation',
     )
     parsed_label_config = models.JSONField(

@@ -5,7 +5,7 @@ sudo docker run -d \
     --env-file ls.env \
     -p 8080:8080 \
     -v $(pwd)/mydata:/label-studio/data \
-    -v ~/Videos/lerobot_storage:/home/gear/Videos/lerobot_storage:ro \
+    -v ~/Videos/lerobot_storage:/home/gear/Videos/lerobot_storage \
     scruple/label-studio:latest \
     label-studio \
     --log-level DEBUG

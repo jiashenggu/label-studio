@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import os
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
+import subprocess
 
 
 @dataclass
@@ -193,11 +194,11 @@ def main(cfg: Config):
             )
 
     else:
+        print("Reusing existing project...")
         project = client.projects.get(id=cfg.project_id)
 
     print("Project ID:", project.id)
     print("Project title:", project.title)
-
 
     # collect tasks grouped by (chunk, filename) so each dict contains all available views
     tasks_map = {}
@@ -280,7 +281,6 @@ def main(cfg: Config):
                     view_key
                 ] = f"/data/local-files/?d={os.path.abspath(video_path).lstrip('/home/gear/Videos/lerobot_storage/')}"
         print(f"[import] 新建 S3 导入连接: {title} -> {local_path}")
-    print("Storage name:", storage.title)
     # final tasks list in requested format: list of dicts
     tasks_json = list(tasks_map.values())
 
@@ -345,6 +345,19 @@ def ensure_export_storage(cfg: Config, project_id: int):
             use_blob_urls=False,  # 导出只用 json/csv
         )
         print(f"[export] 新建 Local 导出连接: {title} -> {local_path}")
+
+        def run(cmd):
+            return subprocess.check_output(cmd, text=True).strip()
+
+        uid_line = run(["sudo", "docker", "exec", "ls", "id"])
+        # uid=1001(app) gid=1001(app) groups=1001(app)
+        uid = int(uid_line.split()[0].split("=")[1].split("(")[0])
+        gid = int(uid_line.split()[1].split("=")[1].split("(")[0])
+        print(f"容器用户 uid={uid} gid={gid}")
+        print(f"修改 {local_path} 所有者")
+        subprocess.run(
+            ["sudo", "chown", "-R", f"{uid}:{gid}", str(local_path)], check=True
+        )
     return st
 
 

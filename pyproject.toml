@@ -77,6 +77,7 @@ dependencies = [
     ## HumanSignal repo dependencies :start
     "label-studio-sdk @ https://github.com/HumanSignal/label-studio-sdk/archive/0ea9e0d97dccbff28013aae9e10cc7a3464cfed2.zip",
     ## HumanSignal repo dependencies :end
+    "tyro>=0.9.35",
 ]
 
 [project.urls]

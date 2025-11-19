@@ -85,9 +85,9 @@ def build_s3_tasks_map(bucket: str, prefix: str = ""):
                 "ego" in view_name or "top" in view_name or "head" in view_name
             ) and "right" in view_name:
                 view_key = "right_ego_view"
-            elif "left_wrist" in view_name:
+            elif "left" in view_name:
                 view_key = "left_wrist_view"
-            elif "right_wrist" in view_name:
+            elif "right" in view_name:
                 view_key = "right_wrist_view"
             else:
                 raise ValueError(

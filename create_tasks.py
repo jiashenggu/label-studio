@@ -35,6 +35,25 @@ class Config:
     """Human-readable name for the import-storage connection that will be created.  
        If omitted, the script uses “Storage #<n>”."""
 
+def name2key(view_name, view_dirname):
+
+    if (
+        "ego" in view_name or "top" in view_name or "head" in view_name
+    ) and "right" not in view_name:
+        view_key = "ego_view"
+    elif (
+        "ego" in view_name or "top" in view_name or "head" in view_name
+    ) and "right" in view_name:
+        view_key = "right_ego_view"
+    elif "left" in view_name:
+        view_key = "left_wrist_view"
+    elif "right" in view_name:
+        view_key = "right_wrist_view"
+    else:
+        raise ValueError(
+            f"Unknown view name: {view_name} (from dir {view_dirname})"
+        )
+    return view_key
 
 def build_s3_tasks_map(bucket: str, prefix: str = ""):
     """
@@ -76,24 +95,8 @@ def build_s3_tasks_map(bucket: str, prefix: str = ""):
             view_dirname = parts[-2]
             view_name = view_dirname.split(".")[-1]
 
-            # 旧逻辑
-            if (
-                "ego" in view_name or "top" in view_name or "head" in view_name
-            ) and "right" not in view_name:
-                view_key = "ego_view"
-            elif (
-                "ego" in view_name or "top" in view_name or "head" in view_name
-            ) and "right" in view_name:
-                view_key = "right_ego_view"
-            elif "left" in view_name:
-                view_key = "left_wrist_view"
-            elif "right" in view_name:
-                view_key = "right_wrist_view"
-            else:
-                raise ValueError(
-                    f"Unknown view name: {view_name} (from dir {view_dirname})"
-                )
 
+            view_key = name2key(view_name, view_dirname)
             chunk = parts[0]
             group_key = f"{chunk}/{video_filename}"
             s3_path = f"s3://{bucket}/{key}"
@@ -117,21 +120,10 @@ def main(cfg: Config):
     print(client.users.list())
     if cfg.project_id == -1:
         label_config = """
-        <View style="display: flex; flex-wrap: wrap;">
-    <!-- 第一行：3 路视频 -->
-    <View style="width: 30%; margin-right: 2em;">
-        <Video name="right_ego_view"
-            value="$right_ego_view"
-            sync="ego_view"
-            timelineHeight="250"
-            height="500"
-            frameRate="15.0"
-            resolver='[{"value":"walk","label":"walk"},
-                        {"value":"run","label":"run"},
-                        {"value":"jump","label":"jump"}]'/>
-    </View>
+<View style="display: flex; flex-wrap: wrap;">
+    <!-- 第一行：2 路视频 -->
 
-    <View style="width: 30%; margin-right: 2em;">
+    <View style="width: 48%; margin-right: 2em;">
         <Video name="left_wrist_view"
             value="$left_wrist_view"
             sync="ego_view"
@@ -143,7 +135,7 @@ def main(cfg: Config):
                         {"value":"jump","label":"jump"}]'/>
     </View>
 
-    <View style="width: 30%; margin-right: 2em;">
+    <View style="width: 48%; margin-right: 2em;">
         <Video name="right_wrist_view"
             value="$right_wrist_view"
             sync="ego_view"
@@ -156,7 +148,7 @@ def main(cfg: Config):
     </View>
 
     <!-- 第二行：ego_view 独占一行 -->
-    <View style="width: 100%; margin-top: 2em;">
+    <View style="width: 98%; margin-top: 2em;">
         <Video name="ego_view"
             value="$ego_view"
             sync="ego_view"
@@ -253,36 +245,25 @@ def main(cfg: Config):
                 view_dirname = os.path.basename(root)
                 view_name = view_dirname.split(".")[-1]
 
-                if (
-                    "ego" in view_name or "top" in view_name or "head" in view_name
-                ) and "right" not in view_name:
-                    view_key = "ego_view"
-                elif (
-                    "ego" in view_name or "top" in view_name or "head" in view_name
-                ) and "right" in view_name:
-                    view_key = "right_ego_view"
-                elif "left_wrist" in view_name:
-                    view_key = "left_wrist_view"
-                elif "right_wrist" in view_name:
-                    view_key = "right_wrist_view"
-                else:
-                    raise ValueError(
-                        f"Unknown view name: {view_name} (from dir {view_dirname})"
-                    )
+                view_key = name2key(view_name, view_dirname)
 
                 # group by chunk + filename to avoid collisions across chunks
                 rel = os.path.relpath(video_path, local_path)
                 parts = rel.split(os.sep)
                 chunk = parts[0] if parts else ""
+                print(chunk, video_filename, view_key)
                 group_key = f"{chunk}/{video_filename}"
 
                 tasks_map.setdefault(group_key, {})
                 tasks_map[group_key][
                     view_key
                 ] = f"/data/local-files/?d={os.path.abspath(video_path).lstrip('/home/gear/Videos/lerobot_storage/')}"
-        print(f"[import] 新建 S3 导入连接: {title} -> {local_path}")
+        print(f"[import] 新建 Local 导入连接: {title} -> {local_path}")
     # final tasks list in requested format: list of dicts
+
     tasks_json = list(tasks_map.values())
+
+
 
     tasks = client.projects.import_tasks(
         request=tasks_json,

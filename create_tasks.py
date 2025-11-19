@@ -346,18 +346,6 @@ def ensure_export_storage(cfg: Config, project_id: int):
         )
         print(f"[export] 新建 Local 导出连接: {title} -> {local_path}")
 
-        def run(cmd):
-            return subprocess.check_output(cmd, text=True).strip()
-
-        uid_line = run(["sudo", "docker", "exec", "ls", "id"])
-        # uid=1001(app) gid=1001(app) groups=1001(app)
-        uid = int(uid_line.split()[0].split("=")[1].split("(")[0])
-        gid = int(uid_line.split()[1].split("=")[1].split("(")[0])
-        print(f"容器用户 uid={uid} gid={gid}")
-        print(f"修改 {local_path} 所有者")
-        subprocess.run(
-            ["sudo", "chown", "-R", f"{uid}:{gid}", str(local_path)], check=True
-        )
     return st
 
 

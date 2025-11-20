@@ -1,5 +1,4 @@
 from label_studio_sdk import LabelStudio
-
 import tyro
 from dataclasses import dataclass
 import os
@@ -35,8 +34,8 @@ class Config:
     """Human-readable name for the import-storage connection that will be created.  
        If omitted, the script uses “Storage #<n>”."""
 
-def name2key(view_name, view_dirname):
 
+def name2key(view_name, view_dirname):
     if (
         "ego" in view_name or "top" in view_name or "head" in view_name
     ) and "right" not in view_name:
@@ -50,17 +49,16 @@ def name2key(view_name, view_dirname):
     elif "right" in view_name:
         view_key = "right_wrist_view"
     else:
-        raise ValueError(
-            f"Unknown view name: {view_name} (from dir {view_dirname})"
-        )
+        raise ValueError(f"Unknown view name: {view_name} (from dir {view_dirname})")
     return view_key
+
 
 def build_s3_tasks_map(bucket: str, prefix: str = ""):
     """
-    遍历指定 S3 桶 + 前缀下所有 .mp4 文件，
-    按旧规则解析 view_key，返回 tasks_map。
+    traverse  s3://bucket/path/*.mp4 files,
+    analyze view_key, return tasks_map.
 
-    返回格式
+    return format
     -------
     {
         "chunk/filename.mp4": {
@@ -74,7 +72,6 @@ def build_s3_tasks_map(bucket: str, prefix: str = ""):
     s3 = boto3.resource("s3")
     tasks_map = {}
 
-    # 确保 prefix 以 / 结尾，方便后续切分
     if prefix and not prefix.endswith("/"):
         prefix += "/"
 
@@ -85,16 +82,14 @@ def build_s3_tasks_map(bucket: str, prefix: str = ""):
             if not key.lower().endswith(".mp4"):
                 continue
 
-            # 相对路径：去掉 prefix 并去掉左侧 /
             rel_key = key[len(prefix) :].lstrip("/")
             parts = rel_key.split("/")
-            if len(parts) < 2:  # 至少要有 chunk/xxx.mp4 两层
+            if len(parts) < 2:
                 continue
 
             video_filename = parts[-1]
             view_dirname = parts[-2]
             view_name = view_dirname.split(".")[-1]
-
 
             view_key = name2key(view_name, view_dirname)
             chunk = parts[0]
@@ -104,7 +99,7 @@ def build_s3_tasks_map(bucket: str, prefix: str = ""):
             tasks_map.setdefault(group_key, {})[view_key] = s3_path
 
     except (BotoCoreError, ClientError) as e:
-        print("AWS 调用失败:", e)
+        print("AWS call failed:", e)
         raise
 
     return tasks_map
@@ -121,7 +116,7 @@ def main(cfg: Config):
     if cfg.project_id == -1:
         label_config = """
 <View style="display: flex; flex-wrap: wrap;">
-    <!-- 第一行：2 路视频 -->
+    <!-- Row 1: 2 views -->
 
     <View style="width: 48%; margin-right: 2em;">
         <Video name="left_wrist_view"
@@ -147,7 +142,7 @@ def main(cfg: Config):
                         {"value":"jump","label":"jump"}]'/>
     </View>
 
-    <!-- 第二行：ego_view 独占一行 -->
+    <!-- Row 2: ego_view  -->
     <View style="width: 98%; margin-top: 2em;">
         <Video name="ego_view"
             value="$ego_view"
@@ -173,7 +168,7 @@ def main(cfg: Config):
         print("Creating new project...")
         if cfg.project_name is None:
             project = client.projects.create(
-                title=f"New Project",
+                title="New Project",
                 label_config=label_config,
             )
             client.projects.update(
@@ -203,7 +198,7 @@ def main(cfg: Config):
         prefix = prefix.rstrip("/") + "/videos/"
         for st in client.import_storage.s3.list(project=project.id):
             if st.title == title:
-                print(f"[import] 复用已有 S3 导入连接: {title}")
+                print(f"[import] Reusing existing S3 import connection: {title}")
                 return st
         storage = client.import_storage.s3.create(
             project=project.id,
@@ -221,12 +216,14 @@ def main(cfg: Config):
         )
 
         tasks_map = build_s3_tasks_map(bucket=bucket, prefix=prefix)
-        print(f"[import] 新建 S3 导入连接: {title} -> s3://{bucket}/{prefix}")
+        print(
+            f"[import] Created new S3 import connection: {title} -> s3://{bucket}/{prefix}"
+        )
     else:
         local_path = os.path.join(cfg.dataset_dir, "videos")
         for st in client.import_storage.local.list(project=project.id):
             if st.title == title:
-                print(f"[import] 复用已有 Local 导入连接: {title}")
+                print(f"[import] Reusing existing Local import connection: {title}")
                 return st
         storage = client.import_storage.local.create(
             path=local_path,
@@ -258,12 +255,10 @@ def main(cfg: Config):
                 tasks_map[group_key][
                     view_key
                 ] = f"/data/local-files/?d={os.path.abspath(video_path).lstrip('/home/gear/Videos/lerobot_storage/')}"
-        print(f"[import] 新建 Local 导入连接: {title} -> {local_path}")
+        print(f"[import] Created new Local import connection: {title} -> {local_path}")
     # final tasks list in requested format: list of dicts
 
     tasks_json = list(tasks_map.values())
-
-
 
     tasks = client.projects.import_tasks(
         request=tasks_json,
@@ -276,25 +271,25 @@ def main(cfg: Config):
 
 def ensure_export_storage(cfg: Config, project_id: int):
     """
-    为给定 project 创建（或复用）一个导出存储连接。
-    返回值为 SDK 返回的 storage 对象。
+    Create (or reuse) an export-storage connection for the given project.
+    Returns the storage object returned by the SDK.
     """
     client = LabelStudio(base_url=cfg.base_url, api_key=cfg.api_key)
 
-    # 统一命名规则，和 import 保持一致
+    # consistent naming rule, same as import
     if cfg.storage_name is None:
         title = f"Export Storage {cfg.dataset_dir}"
     else:
         title = f"Export Storage {cfg.storage_name}"
 
-    # 组装导出路径
+    # assemble export path
     if cfg.dataset_dir.startswith("s3://"):
         bucket, prefix = cfg.dataset_dir.replace("s3://", "").split("/", 1)
         prefix = prefix.rstrip("/") + "/annotations"
-        # 先列出已有连接，避免重复创建
+        # list existing connections first to avoid duplicates
         for st in client.export_storage.s3.list(project=project_id):
             if st.title == title:
-                print(f"[export] 复用已有 S3 导出连接: {title}")
+                print(f"[export] Reusing existing S3 export connection: {title}")
                 return st
 
         st = client.export_storage.s3.create(
@@ -303,29 +298,31 @@ def ensure_export_storage(cfg: Config, project_id: int):
             prefix=prefix,
             aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
             aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-            region_name="us-east-1",  # 按需修改
+            region_name="us-east-1",  # modify if needed
             s3endpoint=os.environ.get("S3_ENDPOINT_URL", None),
             title=title,
-            can_delete_objects=False,  # 安全起见禁止删除
+            can_delete_objects=False,  # forbid deletion for safety
         )
-        print(f"[export] 新建 S3 导出连接: {title} -> s3://{bucket}/{prefix}")
+        print(
+            f"[export] Created new S3 export connection: {title} -> s3://{bucket}/{prefix}"
+        )
     else:
-        # 本地目录
+        # local directory
         local_path = os.path.join(cfg.dataset_dir, "annotations")
         os.makedirs(local_path, exist_ok=True)
 
         for st in client.export_storage.local.list(project=project_id):
             if st.title == title:
-                print(f"[export] 复用已有 Local 导出连接: {title}")
+                print(f"[export] Reusing existing Local export connection: {title}")
                 return st
 
         st = client.export_storage.local.create(
             project=project_id,
             path=local_path,
             title=title,
-            use_blob_urls=False,  # 导出只用 json/csv
+            use_blob_urls=False,  # export uses only json/csv
         )
-        print(f"[export] 新建 Local 导出连接: {title} -> {local_path}")
+        print(f"[export] Created new Local export connection: {title} -> {local_path}")
 
     return st
 

@@ -154,7 +154,7 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
                   mode="multiple"
                   allowClear
                   className={styles.multiSelect}
-                  placeholder="请选择"
+                  placeholder="please select"
                   value={item.options || []}
                   onChange={(opts) => handleChange(idx, opts)}
                   dropdownStyle={{ minWidth: 200 }}

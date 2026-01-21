@@ -115,55 +115,83 @@ def main(cfg: Config):
     print(client.users.list())
     if cfg.project_id == -1:
         label_config = """
-<View style="display: flex; flex-wrap: wrap;">
-    <!-- Row 1: 2 views -->
+<View>
+    <Style>
+        .video-row {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 1em;
+            width: 100%;
+        }
+        
+        .video-item {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .timeline-container {
+            width: 100% !important;
+            margin-top: 1em;
+        }
+        
+        .timeline-container .video-segmentation {
+            width: 100% !important;
+        }
+        
+        .timeline-container .video-segmentation__timeline {
+            width: 100% !important;
+        }
+        
+        .timeline-container .video-segmentation__main {
+            display: none !important;
+        }
+    </Style>
+    
+    <View className="video-row">
+        <View className="video-item">
+            <Video name="left_wrist_view"
+                value="$left_wrist_view"
+                sync="ego_view"
+                height="400"
+                frameRate="15.0"/>
+        </View>
 
-    <View style="width: 48%; margin-right: 2em;">
-        <Video name="left_wrist_view"
-            value="$left_wrist_view"
-            sync="ego_view"
-            timelineHeight="250"
-            height="500"
-            frameRate="15.0"
-            resolver='[{"value":"walk","label":"walk"},
-                        {"value":"run","label":"run"},
-                        {"value":"jump","label":"jump"}]'/>
+        <View className="video-item">
+            <Video name="ego_view_display"
+                value="$ego_view"
+                sync="ego_view"
+                height="400"
+                frameRate="15.0"/>
+        </View>
+
+        <View className="video-item">
+            <Video name="right_wrist_view"
+                value="$right_wrist_view"
+                sync="ego_view"
+                height="400"
+                frameRate="15.0"/>
+        </View>
     </View>
 
-    <View style="width: 48%; margin-right: 2em;">
-        <Video name="right_wrist_view"
-            value="$right_wrist_view"
-            sync="ego_view"
-            timelineHeight="250"
-            height="500"
-            frameRate="15.0"
-            resolver='[{"value":"walk","label":"walk"},
-                        {"value":"run","label":"run"},
-                        {"value":"jump","label":"jump"}]'/>
-    </View>
-
-    <!-- Row 2: ego_view  -->
-    <View style="width: 98%; margin-top: 2em;">
+    <View className="timeline-container">
         <Video name="ego_view"
             value="$ego_view"
             sync="ego_view"
             timelineHeight="250"
-            height="500"
-            frameRate="15.0"
-            resolver='[{"value":"walk","label":"walk"},
-                        {"value":"run","label":"run"},
-                        {"value":"jump","label":"jump"}]'/>
+            height="1"
+            frameRate="15.0"/>
+        
+        <VideoRectangle name="box"
+                        toName="ego_view"
+                        perFrame="true"/>
+        <Labels name="videoLabels"
+                toName="ego_view">
+            <Label value="Subgoal"    background="#944BFF"/>
+            <Label value="Suboptimal" background="#FFA500"/>
+            <Label value="Failure"    background="#FF0000"/>
+        </Labels>
     </View>
-    <VideoRectangle name="box"
-                    toName="ego_view"
-                    perFrame="true"/>
-    <Labels name="videoLabels"
-            toName="ego_view">
-    <Label value="Subgoal"    background="#944BFF"/>
-    <Label value="Suboptimal" background="#FFA500"/>
-    <Label value="Failure"    background="#FF0000"/>
-    </Labels>
-    </View>
+</View>
         """
         print("Creating new project...")
         if cfg.project_name is None:

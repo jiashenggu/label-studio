@@ -149,7 +149,7 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
               </label>
 
               <label className={styles.label}>
-                <span className={styles.labelText}>选项</span>
+                <span className={styles.labelText}>options</span>
                 <Select
                   mode="multiple"
                   allowClear

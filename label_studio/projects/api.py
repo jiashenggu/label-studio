@@ -37,6 +37,7 @@ from projects.serializers import (
     ProjectLabelConfigSerializer,
     ProjectModelVersionExtendedSerializer,
     ProjectModelVersionParamsSerializer,
+    ProjectQualityMetricsSerializer,
     ProjectReimportSerializer,
     ProjectSerializer,
     ProjectSummarySerializer,
@@ -885,3 +886,198 @@ class ProjectAnnotatorsAPI(generics.RetrieveAPIView):
         users = User.objects.filter(id__in=annotator_ids).prefetch_related('om_through').order_by('id')
         data = UserSimpleSerializer(users, many=True, context={'request': request}).data
         return Response(data)
+
+
+class ProjectQualityMetricsAPI(GetParentObjectMixin, generics.RetrieveAPIView):
+    """API endpoint for retrieving project quality metrics"""
+    
+    parser_classes = (JSONParser,)
+    parent_queryset = Project.objects.all()
+    permission_required = all_permissions.projects_view
+    serializer_class = ProjectQualityMetricsSerializer
+
+    @extend_schema(
+        tags=['Projects'],
+        summary='Get project quality metrics',
+        description='Retrieve comprehensive quality metrics for a project including annotation statistics, lead times, and completion rates',
+        responses={200: ProjectQualityMetricsSerializer}
+    )
+    def get(self, request, *args, **kwargs):
+        from django.db.models import Avg, Count, Max, Min, Q
+        from django.db.models.functions import TruncDate
+        import statistics
+        import math
+        
+        project = self.parent_object
+        
+        # Get all annotations for the project
+        annotations = Annotation.objects.filter(project=project)
+        completed_annotations = annotations.filter(was_cancelled=False)
+        skipped_annotations = annotations.filter(was_cancelled=True)
+        ground_truth_annotations = annotations.filter(ground_truth=True)
+        
+        # Calculate basic metrics
+        total_annotations = annotations.count()
+        total_tasks = project.tasks.count()
+        completed_count = completed_annotations.count()
+        skipped_count = skipped_annotations.count()
+        ground_truth_count = ground_truth_annotations.count()
+        
+        # Calculate lead time metrics - with safe handling
+        lead_times = list(completed_annotations.filter(
+            lead_time__isnull=False,
+            lead_time__gt=0
+        ).values_list('lead_time', flat=True))
+        
+        # Filter out any invalid values (inf, -inf, nan)
+        lead_times = [lt for lt in lead_times if math.isfinite(lt)]
+        
+        avg_lead_time = sum(lead_times) / len(lead_times) if lead_times else 0.0
+        median_lead_time = statistics.median(lead_times) if lead_times else 0.0
+        
+        # Calculate annotations per task
+        annotations_per_task = total_annotations / total_tasks if total_tasks > 0 else 0.0
+        
+        # Calculate completion rate
+        completed_tasks = project.tasks.filter(is_labeled=True).count()
+        completion_rate = (completed_tasks / total_tasks * 100.0) if total_tasks > 0 else 0.0
+        
+        # Get unique annotators count
+        annotators_count = annotations.filter(completed_by__isnull=False).values('completed_by').distinct().count()
+        
+        # Annotations by user
+        annotations_by_user = list(
+            annotations.filter(completed_by__isnull=False)
+            .values('completed_by__email', 'completed_by__first_name', 'completed_by__last_name')
+            .annotate(
+                count=Count('id'),
+                avg_time=Avg('lead_time'),
+                skipped=Count('id', filter=Q(was_cancelled=True)),
+                completed=Count('id', filter=Q(was_cancelled=False))
+            )
+            .order_by('-count')[:20]
+        )
+        
+        # Format user data and handle None/invalid values
+        for user_data in annotations_by_user:
+            user_data['name'] = f"{user_data.pop('completed_by__first_name', '')} {user_data.pop('completed_by__last_name', '')}".strip() or user_data.get('completed_by__email', 'Unknown')
+            user_data.pop('completed_by__email', None)
+            # Ensure avg_time is a valid number
+            if user_data.get('avg_time') is None or not math.isfinite(user_data.get('avg_time', 0) or 0):
+                user_data['avg_time'] = 0.0
+            else:
+                user_data['avg_time'] = float(user_data['avg_time'])
+        
+        # Annotations over time (last 30 days)
+        from datetime import timedelta
+        from django.utils.timezone import now
+        
+        thirty_days_ago = now() - timedelta(days=30)
+        annotations_over_time = list(
+            annotations.filter(created_at__gte=thirty_days_ago)
+            .annotate(date=TruncDate('created_at'))
+            .values('date')
+            .annotate(
+                count=Count('id'),
+                completed=Count('id', filter=Q(was_cancelled=False)),
+                skipped=Count('id', filter=Q(was_cancelled=True))
+            )
+            .order_by('date')
+        )
+        
+        # Convert dates to strings
+        for item in annotations_over_time:
+            item['date'] = item['date'].isoformat() if item['date'] else None
+        
+        # Lead time distribution (buckets)
+        lead_time_buckets = [
+            {'range': '0-30s', 'count': 0},
+            {'range': '30s-1m', 'count': 0},
+            {'range': '1-2m', 'count': 0},
+            {'range': '2-5m', 'count': 0},
+            {'range': '5-10m', 'count': 0},
+            {'range': '10m+', 'count': 0},
+        ]
+        
+        # Categorize lead times into buckets
+        for lead_time in lead_times:
+            if lead_time < 30:
+                lead_time_buckets[0]['count'] += 1
+            elif lead_time < 60:
+                lead_time_buckets[1]['count'] += 1
+            elif lead_time < 120:
+                lead_time_buckets[2]['count'] += 1
+            elif lead_time < 300:
+                lead_time_buckets[3]['count'] += 1
+            elif lead_time < 600:
+                lead_time_buckets[4]['count'] += 1
+            else:
+                lead_time_buckets[5]['count'] += 1
+        
+        # Recent annotations (last 10)
+        recent_annotations = list(
+            annotations.select_related('task', 'completed_by')
+            .order_by('-created_at')[:10]
+            .values(
+                'id',
+                'created_at',
+                'lead_time',
+                'was_cancelled',
+                'ground_truth',
+                'completed_by__email',
+                'completed_by__first_name',
+                'completed_by__last_name',
+                'task_id',
+                'result_count'
+            )
+        )
+        
+        # Format recent annotations and handle None/invalid values
+        for ann in recent_annotations:
+            ann['created_at'] = ann['created_at'].isoformat() if ann['created_at'] else None
+            ann['annotator'] = f"{ann.pop('completed_by__first_name', '')} {ann.pop('completed_by__last_name', '')}".strip() or ann.pop('completed_by__email', 'Unknown')
+            # Ensure lead_time is a valid number
+            if ann.get('lead_time') is None or not math.isfinite(ann.get('lead_time', 0) or 0):
+                ann['lead_time'] = 0.0
+            else:
+                ann['lead_time'] = float(ann['lead_time'])
+        
+        # Task completion status
+        task_completion_status = {
+            'total': total_tasks,
+            'completed': completed_tasks,
+            'in_progress': project.tasks.filter(total_annotations__gt=0, is_labeled=False).count(),
+            'not_started': project.tasks.filter(total_annotations=0).count(),
+        }
+        
+        # Ensure all float values are finite before returning
+        def safe_float(value, default=0.0):
+            """Ensure float is finite and JSON-compliant"""
+            if value is None:
+                return default
+            try:
+                f = float(value)
+                return f if math.isfinite(f) else default
+            except (ValueError, TypeError):
+                return default
+        
+        data = {
+            'total_annotations': int(total_annotations),
+            'total_tasks': int(total_tasks),
+            'completed_annotations': int(completed_count),
+            'skipped_annotations': int(skipped_count),
+            'ground_truth_annotations': int(ground_truth_count),
+            'avg_lead_time': round(safe_float(avg_lead_time), 2),
+            'median_lead_time': round(safe_float(median_lead_time), 2),
+            'annotations_per_task': round(safe_float(annotations_per_task), 2),
+            'completion_rate': round(safe_float(completion_rate), 2),
+            'annotators_count': int(annotators_count),
+            'annotations_by_user': annotations_by_user,
+            'annotations_over_time': annotations_over_time,
+            'lead_time_distribution': lead_time_buckets,
+            'recent_annotations': recent_annotations,
+            'task_completion_status': task_completion_status,
+        }
+        
+        serializer = self.serializer_class(data)
+        return Response(serializer.data)

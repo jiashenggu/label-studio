@@ -1,73 +1,194 @@
+"""
+Unified task creation script for Label Studio.
+
+Supports two modes:
+1. lerobot: Import video files from local or S3 storage (LeRobot format)
+2. packds: Import frame sequences from LanceDB frame server (PackDS format)
+"""
+
 from label_studio_sdk import LabelStudio
 import tyro
 from dataclasses import dataclass
+from typing import Optional, Literal
 import os
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-import subprocess
+import requests
+import re
 
 
 @dataclass
 class Config:
-    """Configuration for creating a Label-Studio project and importing multi-view video tasks."""
-
-    dataset_dir: str
-    """Root directory that contains the videos.
-       Can be a local folder (e.g. /data/videos) or an S3 URI (s3://bucket/prefix)."""
-
-    api_key: str
-    """Label-Studio API token. Create one in ➜ Account & Settings → Access Tokens."""
-
+    """Configuration for creating Label Studio tasks."""
+    
+    mode: Literal["lerobot", "packds"] = "lerobot"
+    """Mode: 'lerobot' for video files, 'packds' for frame sequences from LanceDB."""
+    
+    api_key: str = None
+    """Label Studio API token. Create one in Account & Settings → Access Tokens."""
+    
     base_url: str = "http://localhost:8080/"
-    """Full URL where Label-Studio is reachable. Change it if you run LS on another host/port."""
-
+    """Label Studio URL."""
+    
     project_id: int = -1
-    """Existing project to reuse.  
-       == -1  → create a new project (default).  
-       != -1 → import into that project ID instead of creating one."""
+    """Existing project ID, or -1 to create new."""
+    
+    project_name: Optional[str] = None
+    """Project name (for new projects)."""
+    
+    # LeRobot mode parameters
+    dataset_dir: Optional[str] = None
+    """[lerobot mode] Root directory with videos (local path or s3://bucket/prefix)."""
+    
+    storage_name: Optional[str] = None
+    """[lerobot mode] Name for storage connection."""
+    
+    # PackDS mode parameters
+    frame_server_url: Optional[str] = None
+    """[packds mode] URL of LanceDB frame server (e.g., http://localhost:8000)."""
+    
+    max_episodes: int = 100
+    """[packds mode] Maximum number of episodes to import."""
+    
+    episode_filter: Optional[int] = None
+    """[packds mode] Filter by specific episode index."""
+    
+    fps: float = 15.0
+    """Frame rate for video playback."""
 
-    project_name: str = None
-    """Title for the **new** project (only used when project_id=-1).  
-       If omitted, the script will generate “New Project #<id>”."""
 
-    storage_name: str = None
-    """Human-readable name for the import-storage connection that will be created.  
-       If omitted, the script uses “Storage #<n>”."""
+def create_label_config(fps: float = 15.0) -> str:
+    """Generate Label Studio config for multi-view video annotation."""
+    return f"""
+<View>
+    <Style>
+        .video-row {{
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 1em;
+            width: 100%;
+        }}
+        
+        .video-item {{
+            flex: 1;
+            min-width: 0;
+        }}
+        
+        .timeline-container {{
+            width: 100% !important;
+            margin-top: 1em;
+        }}
+        
+        .timeline-container .video-segmentation {{
+            width: 100% !important;
+        }}
+        
+        .timeline-container .video-segmentation__timeline {{
+            width: 100% !important;
+        }}
+        
+        .timeline-container .video-segmentation__main {{
+            display: none !important;
+        }}
+        
+        .meta-info {{
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-family: monospace;
+        }}
+    </Style>
+    
+    <View className="meta-info">
+        <Text name="meta" value="Episode: $episode_idx | Task: $task_text"/>
+    </View>
+    
+    <View className="video-row">
+        <View className="video-item">
+            <Header value="Left Wrist View"/>
+            <Video name="left_wrist_view"
+                value="$left_wrist_view"
+                sync="ego_view"
+                framerate="{fps}"
+                height="400"/>
+        </View>
+
+        <View className="video-item">
+            <Header value="Ego View (Display)"/>
+            <Video name="ego_view_display"
+                value="$ego_view"
+                sync="ego_view"
+                framerate="{fps}"
+                height="400"/>
+        </View>
+
+        <View className="video-item">
+            <Header value="Right Wrist View"/>
+            <Video name="right_wrist_view"
+                value="$right_wrist_view"
+                sync="ego_view"
+                framerate="{fps}"
+                height="400"/>
+        </View>
+    </View>
+
+    <View className="timeline-container">
+        <Video name="ego_view"
+            value="$ego_view"
+            sync="ego_view"
+            framerate="{fps}"
+            timelineHeight="250"
+            height="1"/>
+        
+        <VideoRectangle name="box"
+                        toName="ego_view"
+                        perFrame="true"/>
+        
+        <Labels name="videoLabels"
+                toName="ego_view">
+            <Label value="Subgoal"    background="#944BFF"/>
+            <Label value="Suboptimal" background="#FFA500"/>
+            <Label value="Failure"    background="#FF0000"/>
+            <Label value="Success"    background="#00FF00"/>
+        </Labels>
+        
+        <TextArea name="notes"
+                  toName="ego_view"
+                  placeholder="Additional notes..."
+                  rows="3"/>
+    </View>
+</View>
+"""
 
 
-def name2key(view_name, view_dirname):
-    if (
-        "ego" in view_name or "top" in view_name or "head" in view_name
-    ) and "right" not in view_name:
-        view_key = "ego_view"
-    elif (
-        "ego" in view_name or "top" in view_name or "head" in view_name
-    ) and "right" in view_name:
-        view_key = "right_ego_view"
+def name2key(view_name: str, view_dirname: str) -> str:
+    """Map view directory name to canonical view key."""
+    if ("ego" in view_name or "top" in view_name or "head" in view_name) and "right" not in view_name:
+        return "ego_view"
+    elif ("ego" in view_name or "top" in view_name or "head" in view_name) and "right" in view_name:
+        return "right_ego_view"
     elif "left" in view_name:
-        view_key = "left_wrist_view"
+        return "left_wrist_view"
     elif "right" in view_name:
-        view_key = "right_wrist_view"
+        return "right_wrist_view"
     else:
         raise ValueError(f"Unknown view name: {view_name} (from dir {view_dirname})")
-    return view_key
 
 
-def build_s3_tasks_map(bucket: str, prefix: str = ""):
+def build_s3_tasks_map(bucket: str, prefix: str = "") -> dict:
     """
-    traverse  s3://bucket/path/*.mp4 files,
-    analyze view_key, return tasks_map.
-
-    return format
-    -------
-    {
-        "chunk/filename.mp4": {
-            "ego_view": "s3://bucket/path/ego.mp4",
-            "left_wrist_view": "s3://bucket/path/left_wrist.mp4",
+    Traverse s3://bucket/prefix/*.mp4 files and build tasks map.
+    
+    Returns:
+        {
+            "chunk/filename.mp4": {
+                "ego_view": "s3://bucket/path/ego.mp4",
+                "left_wrist_view": "s3://bucket/path/left_wrist.mp4",
+                ...
+            },
             ...
-        },
-        ...
-    }
+        }
     """
     s3 = boto3.resource("s3")
     tasks_map = {}
@@ -82,7 +203,7 @@ def build_s3_tasks_map(bucket: str, prefix: str = ""):
             if not key.lower().endswith(".mp4"):
                 continue
 
-            rel_key = key[len(prefix) :].lstrip("/")
+            rel_key = key[len(prefix):].lstrip("/")
             parts = rel_key.split("/")
             if len(parts) < 2:
                 continue
@@ -99,264 +220,359 @@ def build_s3_tasks_map(bucket: str, prefix: str = ""):
             tasks_map.setdefault(group_key, {})[view_key] = s3_path
 
     except (BotoCoreError, ClientError) as e:
-        print("AWS call failed:", e)
+        print(f"❌ AWS call failed: {e}")
         raise
 
     return tasks_map
 
 
-def main(cfg: Config):
-    client = LabelStudio(base_url=cfg.base_url, api_key=cfg.api_key)
-    print("whoami and token:")
-    print(client.users.whoami())
-    print(client.users.get_token())
-
-    print("list users:")
-    print(client.users.list())
-    if cfg.project_id == -1:
-        label_config = """
-<View>
-    <Style>
-        .video-row {
-            display: flex;
-            flex-wrap: nowrap;
-            gap: 1em;
-            width: 100%;
-        }
-        
-        .video-item {
-            flex: 1;
-            min-width: 0;
-        }
-        
-        .timeline-container {
-            width: 100% !important;
-            margin-top: 1em;
-        }
-        
-        .timeline-container .video-segmentation {
-            width: 100% !important;
-        }
-        
-        .timeline-container .video-segmentation__timeline {
-            width: 100% !important;
-        }
-        
-        .timeline-container .video-segmentation__main {
-            display: none !important;
-        }
-    </Style>
+def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
+    """Import tasks from video files (local or S3) - LeRobot dataset format."""
     
-    <View className="video-row">
-        <View className="video-item">
-            <Video name="left_wrist_view"
-                value="$left_wrist_view"
-                sync="ego_view"
-                height="400"
-                frameRate="15.0"/>
-        </View>
-
-        <View className="video-item">
-            <Video name="ego_view_display"
-                value="$ego_view"
-                sync="ego_view"
-                height="400"
-                frameRate="15.0"/>
-        </View>
-
-        <View className="video-item">
-            <Video name="right_wrist_view"
-                value="$right_wrist_view"
-                sync="ego_view"
-                height="400"
-                frameRate="15.0"/>
-        </View>
-    </View>
-
-    <View className="timeline-container">
-        <Video name="ego_view"
-            value="$ego_view"
-            sync="ego_view"
-            timelineHeight="250"
-            height="1"
-            frameRate="15.0"/>
-        
-        <VideoRectangle name="box"
-                        toName="ego_view"
-                        perFrame="true"/>
-        <Labels name="videoLabels"
-                toName="ego_view">
-            <Label value="Subgoal"    background="#944BFF"/>
-            <Label value="Suboptimal" background="#FFA500"/>
-            <Label value="Failure"    background="#FF0000"/>
-        </Labels>
-    </View>
-</View>
-        """
-        print("Creating new project...")
-        if cfg.project_name is None:
-            project = client.projects.create(
-                title="New Project",
-                label_config=label_config,
-            )
-            client.projects.update(
-                id=project.id,
-                title=f"New Project #{project.id}",
-            )
-        else:
-            project = client.projects.create(
-                title=cfg.project_name, label_config=label_config
-            )
-
-    else:
-        print("Reusing existing project...")
-        project = client.projects.get(id=cfg.project_id)
-
-    print("Project ID:", project.id)
-    print("Project title:", project.title)
-
-    # collect tasks grouped by (chunk, filename) so each dict contains all available views
+    print("=" * 60)
+    print("🤖 LEROBOT MODE: Importing video files")
+    print("=" * 60)
+    print()
+    
+    if not cfg.dataset_dir:
+        raise ValueError("dataset_dir is required for lerobot mode")
+    
     tasks_map = {}
+    
     if cfg.storage_name is None:
         title = f"Import Storage {cfg.dataset_dir}"
     else:
         title = f"Import Storage {cfg.storage_name}"
+    
+    # S3 storage
     if cfg.dataset_dir.startswith("s3://"):
         bucket, prefix = cfg.dataset_dir.replace("s3://", "").split("/", 1)
         prefix = prefix.rstrip("/") + "/videos/"
+        
+        # Check for existing storage
         for st in client.import_storage.s3.list(project=project.id):
             if st.title == title:
-                print(f"[import] Reusing existing S3 import connection: {title}")
-                return st
-        storage = client.import_storage.s3.create(
-            project=project.id,
-            recursive_scan=True,
-            regex_filter=".*\.(mp4|avi|mov|wmv|webm)$",
-            aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-            aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-            bucket=bucket,
-            prefix=prefix,
-            presign=True,
-            region_name="us-east-1",
-            s3endpoint=os.environ["S3_ENDPOINT_URL"],
-            title=title,
-            use_blob_urls=True,
-        )
-
-        tasks_map = build_s3_tasks_map(bucket=bucket, prefix=prefix)
-        print(
-            f"[import] Created new S3 import connection: {title} -> s3://{bucket}/{prefix}"
-        )
+                print(f"✓ Reusing existing S3 import storage: {title}")
+                tasks_map = build_s3_tasks_map(bucket=bucket, prefix=prefix)
+                break
+        else:
+            # Create new S3 storage
+            client.import_storage.s3.create(
+                project=project.id,
+                recursive_scan=True,
+                regex_filter=r".*\.(mp4|avi|mov|wmv|webm)$",
+                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+                bucket=bucket,
+                prefix=prefix,
+                presign=True,
+                region_name="us-east-1",
+                s3endpoint=os.environ["S3_ENDPOINT_URL"],
+                title=title,
+                use_blob_urls=True,
+            )
+            tasks_map = build_s3_tasks_map(bucket=bucket, prefix=prefix)
+            print(f"✓ Created S3 import storage: {title} -> s3://{bucket}/{prefix}")
+    
+    # Local storage
     else:
         local_path = os.path.join(cfg.dataset_dir, "videos")
+        
+        # Check for existing storage
         for st in client.import_storage.local.list(project=project.id):
             if st.title == title:
-                print(f"[import] Reusing existing Local import connection: {title}")
-                return st
-        storage = client.import_storage.local.create(
-            path=local_path,
-            project=project.id,
-            regex_filter=".*\.(mp4|avi|mov|wmv|webm)$",
-            title=title,
-            use_blob_urls=True,
-        )
+                print(f"✓ Reusing existing local import storage: {title}")
+                break
+        else:
+            # Create new local storage
+            client.import_storage.local.create(
+                path=local_path,
+                project=project.id,
+                regex_filter=r".*\.(mp4|avi|mov|wmv|webm)$",
+                title=title,
+                use_blob_urls=True,
+            )
+            print(f"✓ Created local import storage: {title} -> {local_path}")
+        
+        # Build tasks map
         for root, _, files in os.walk(local_path):
             for video_filename in files:
                 if not video_filename.endswith(".mp4"):
                     continue
+                
                 video_path = os.path.join(root, video_filename)
-
-                # determine view directory name (parent dir) and canonical view name
                 view_dirname = os.path.basename(root)
                 view_name = view_dirname.split(".")[-1]
-
                 view_key = name2key(view_name, view_dirname)
-
-                # group by chunk + filename to avoid collisions across chunks
+                
                 rel = os.path.relpath(video_path, local_path)
                 parts = rel.split(os.sep)
                 chunk = parts[0] if parts else ""
-                print(chunk, video_filename, view_key)
                 group_key = f"{chunk}/{video_filename}"
-
-                tasks_map.setdefault(group_key, {})
-                tasks_map[group_key][
-                    view_key
-                ] = f"/data/local-files/?d={os.path.abspath(video_path).lstrip('/home/gear/Videos/lerobot_storage/')}"
-        print(f"[import] Created new Local import connection: {title} -> {local_path}")
-    # final tasks list in requested format: list of dicts
-
-    tasks_json = list(tasks_map.values())
-
-    tasks = client.projects.import_tasks(
+                
+                abs_path = os.path.abspath(video_path)
+                rel_path = abs_path.lstrip('/home/gear/Videos/lerobot_storage/')
+                tasks_map.setdefault(group_key, {})[view_key] = (
+                    f"/data/local-files/?d={rel_path}"
+                )
+    
+    # Import tasks and add metadata
+    tasks_json = []
+    for idx, (group_key, task_data) in enumerate(tasks_map.items()):
+        # Extract episode number from group_key or filename
+        episode_match = re.search(r'episode[_-](\d+)', group_key, re.IGNORECASE)
+        if episode_match:
+            episode_idx = int(episode_match.group(1))
+        else:
+            episode_idx = idx
+        
+        # Add metadata fields required by label config
+        task_data['episode_idx'] = episode_idx
+        task_data['task_text'] = group_key.split('/')[0] if '/' in group_key else 'N/A'
+        
+        tasks_json.append(task_data)
+    
+    print()
+    print(f"📥 Importing {len(tasks_json)} tasks...")
+    
+    result = client.projects.import_tasks(
         request=tasks_json,
         id=project.id,
         return_task_ids=True,
     )
-    print(f"Prepared {tasks.task_count} tasks")
-    return project.id
+    
+    print(f"✓ Successfully imported {result.task_count} tasks")
+    return result.task_count
 
 
-def ensure_export_storage(cfg: Config, project_id: int):
-    """
-    Create (or reuse) an export-storage connection for the given project.
-    Returns the storage object returned by the SDK.
-    """
-    client = LabelStudio(base_url=cfg.base_url, api_key=cfg.api_key)
-
-    # consistent naming rule, same as import
-    if cfg.storage_name is None:
-        title = f"Export Storage {cfg.dataset_dir}"
-    else:
-        title = f"Export Storage {cfg.storage_name}"
-
-    # assemble export path
-    if cfg.dataset_dir.startswith("s3://"):
-        bucket, prefix = cfg.dataset_dir.replace("s3://", "").split("/", 1)
-        prefix = prefix.rstrip("/") + "/annotations"
-        # list existing connections first to avoid duplicates
-        for st in client.export_storage.s3.list(project=project_id):
-            if st.title == title:
-                print(f"[export] Reusing existing S3 export connection: {title}")
-                return st
-
-        st = client.export_storage.s3.create(
-            project=project_id,
-            bucket=bucket,
-            prefix=prefix,
-            aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-            aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-            region_name="us-east-1",  # modify if needed
-            s3endpoint=os.environ.get("S3_ENDPOINT_URL", None),
-            title=title,
-            can_delete_objects=False,  # forbid deletion for safety
+def import_packds_tasks(cfg: Config, client: LabelStudio, project) -> int:
+    """Import tasks from frame sequences via LanceDB server - PackDS format."""
+    
+    print("=" * 60)
+    print("📦 PACKDS MODE: Importing from LanceDB")
+    print("=" * 60)
+    print()
+    
+    if not cfg.frame_server_url:
+        raise ValueError("frame_server_url is required for packds mode")
+    
+    # Fetch tasks from frame server
+    print(f"📡 Fetching tasks from frame server: {cfg.frame_server_url}")
+    
+    params = {
+        "max_episodes": cfg.max_episodes,
+        "base_url": cfg.frame_server_url,
+    }
+    
+    if cfg.episode_filter is not None:
+        params["episode_filter"] = cfg.episode_filter
+    
+    try:
+        response = requests.get(
+            f"{cfg.frame_server_url}/tasks",
+            params=params,
+            timeout=30
         )
-        print(
-            f"[export] Created new S3 export connection: {title} -> s3://{bucket}/{prefix}"
-        )
-    else:
-        # local directory
-        local_path = os.path.join(cfg.dataset_dir, "annotations")
-        os.makedirs(local_path, exist_ok=True)
+        response.raise_for_status()
+        data = response.json()
+        tasks = data.get("tasks", [])
+        print(f"✓ Retrieved {len(tasks)} tasks")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Error connecting to frame server: {e}")
+        print("\nMake sure the server is running:")
+        cmd = "python lancedb_frame_server.py --lancedb-path /path/to/db"
+        print(f"  {cmd}")
+        raise
+    
+    if not tasks:
+        print("⚠️  No tasks found!")
+        return 0
+    
+    print()
+    print("📋 Sample task structure:")
+    sample = tasks[0]
+    print(f"  Episode: {sample.get('episode_idx')}")
+    print(f"  Task: {sample.get('task_text', 'N/A')}")
+    
+    for view in ['ego_view', 'left_wrist_view', 'right_wrist_view']:
+        if view in sample:
+            url = sample[view]
+            if isinstance(url, str):
+                print(f"  {view}: {url[:80]}...")
+            else:
+                print(f"  {view}: (unexpected format)")
+    
+    print()
+    print(f"📥 Importing {len(tasks)} tasks to Label Studio...")
+    
+    result = client.projects.import_tasks(
+        request=tasks,
+        id=project.id,
+        return_task_ids=True
+    )
+    
+    print(f"✓ Successfully imported {result.task_count} tasks")
+    return result.task_count
 
+
+def ensure_export_storage(cfg: Config, client: LabelStudio, project_id: int):
+    """Create or reuse export storage connection."""
+    
+    print()
+    print("💾 Setting up export storage...")
+    
+    if cfg.mode == "packds":
+        # For PackDS (frame sequences), use local directory
+        annotations_dir = "./annotations_episodes"
+        os.makedirs(annotations_dir, exist_ok=True)
+        
+        title = "Export Storage (Frame Sequences)"
+        
         for st in client.export_storage.local.list(project=project_id):
-            if st.title == title:
-                print(f"[export] Reusing existing Local export connection: {title}")
+            if title in st.title or annotations_dir in st.path:
+                print("✓ Using existing export storage")
                 return st
-
+        
         st = client.export_storage.local.create(
             project=project_id,
-            path=local_path,
-            title=title,
-            use_blob_urls=False,  # export uses only json/csv
+            path=os.path.abspath(annotations_dir),
+            title=title
         )
-        print(f"[export] Created new Local export connection: {title} -> {local_path}")
+        print(f"✓ Created export storage: {annotations_dir}")
+        return st
+    
+    else:  # lerobot mode
+        if not cfg.dataset_dir:
+            print("⚠️  No dataset_dir specified, skipping export storage")
+            return None
+        
+        if cfg.storage_name is None:
+            title = f"Export Storage {cfg.dataset_dir}"
+        else:
+            title = f"Export Storage {cfg.storage_name}"
+        
+        # S3 export
+        if cfg.dataset_dir.startswith("s3://"):
+            bucket, prefix = cfg.dataset_dir.replace("s3://", "").split("/", 1)
+            prefix = prefix.rstrip("/") + "/annotations"
+            
+            for st in client.export_storage.s3.list(project=project_id):
+                if st.title == title:
+                    print("✓ Reusing existing S3 export storage")
+                    return st
+            
+            st = client.export_storage.s3.create(
+                project=project_id,
+                bucket=bucket,
+                prefix=prefix,
+                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+                region_name="us-east-1",
+                s3endpoint=os.environ.get("S3_ENDPOINT_URL", None),
+                title=title,
+                can_delete_objects=False,
+            )
+            print(f"✓ Created S3 export storage: s3://{bucket}/{prefix}")
+        
+        # Local export
+        else:
+            local_path = os.path.join(cfg.dataset_dir, "annotations")
+            os.makedirs(local_path, exist_ok=True)
+            
+            for st in client.export_storage.local.list(project=project_id):
+                if st.title == title:
+                    print("✓ Reusing existing local export storage")
+                    return st
+            
+            st = client.export_storage.local.create(
+                project=project_id,
+                path=local_path,
+                title=title,
+                use_blob_urls=False,
+            )
+            print(f"✓ Created local export storage: {local_path}")
+        
+        return st
 
-    return st
+
+def main():
+    cfg = tyro.cli(Config)
+    
+    print("=" * 60)
+    print("🏷️  Label Studio Task Creator")
+    print("=" * 60)
+    print()
+    print(f"Mode: {cfg.mode.upper()}")
+    print()
+    
+    # Validate configuration
+    if cfg.mode == "lerobot" and not cfg.dataset_dir:
+        raise ValueError("dataset_dir is required for lerobot mode")
+    if cfg.mode == "packds" and not cfg.frame_server_url:
+        raise ValueError("frame_server_url is required for packds mode")
+    if not cfg.api_key:
+        raise ValueError("api_key is required")
+    
+    # Connect to Label Studio
+    print(f"📡 Connecting to Label Studio: {cfg.base_url}")
+    client = LabelStudio(base_url=cfg.base_url, api_key=cfg.api_key)
+    
+    user_info = client.users.whoami()
+    email = user_info.email if hasattr(user_info, 'email') else 'User'
+    print(f"✓ Authenticated as: {email}")
+    print()
+    
+    # Create or get project
+    if cfg.project_id == -1:
+        print("📝 Creating new project...")
+        label_config = create_label_config(cfg.fps)
+        
+        project_name = (cfg.project_name or
+                        f"{cfg.mode.title()} Annotation Project")
+        project = client.projects.create(
+            title=project_name,
+            label_config=label_config
+        )
+        print(f"✓ Created project: {project.title} (ID: {project.id})")
+    else:
+        print(f"📂 Using existing project {cfg.project_id}...")
+        project = client.projects.get(id=cfg.project_id)
+        print(f"✓ Project: {project.title}")
+    
+    print()
+    
+    # Import tasks based on mode
+    if cfg.mode == "lerobot":
+        task_count = import_lerobot_tasks(cfg, client, project)
+    else:  # packds
+        task_count = import_packds_tasks(cfg, client, project)
+    
+    # Setup export storage
+    try:
+        ensure_export_storage(cfg, client, project.id)
+    except Exception as e:
+        print(f"⚠️  Could not setup export storage: {e}")
+    
+    print()
+    print("=" * 60)
+    print("✅ All done!")
+    print("=" * 60)
+    print()
+    print("🌐 Access your project:")
+    print(f"   {cfg.base_url}projects/{project.id}/")
+    print()
+    
+    if cfg.mode == "packds":
+        print("💡 Important:")
+        print(f"   - Keep the frame server running: {cfg.frame_server_url}")
+        print("   - Videos are generated on-demand from frames")
+        print("   - First load may take time (video generation)")
+        print()
+
+    print("📊 Statistics:")
+    print(f"   - Total tasks: {task_count}")
+    print()
 
 
 if __name__ == "__main__":
-    cfg = tyro.cli(Config)
-    project_id = main(cfg)
-
-    ensure_export_storage(cfg, project_id=int(project_id))
+    main()

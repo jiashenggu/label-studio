@@ -7,6 +7,7 @@ import { LabelingSettings } from "./LabelingSettings";
 import { MachineLearningSettings } from "./MachineLearningSettings/MachineLearningSettings";
 import { PredictionsSettings } from "./PredictionsSettings/PredictionsSettings";
 import { StorageSettings } from "./StorageSettings/StorageSettings";
+import { QualityDashboard } from "./QualityDashboard";
 import { isInLicense, LF_CLOUD_STORAGE_FOR_MANAGERS } from "../../utils/license-flags";
 import "./settings.scss";
 
@@ -19,6 +20,7 @@ export const MenuLayout = ({ children, ...routeProps }) => {
         GeneralSettings,
         LabelingSettings,
         AnnotationSettings,
+        QualityDashboard,
         MachineLearningSettings,
         PredictionsSettings,
         isAllowCloudStorage && StorageSettings,
@@ -36,6 +38,7 @@ const pages = {
   LabelingSettings,
   MachineLearningSettings,
   PredictionsSettings,
+  QualityDashboard,
   WebhookPage,
   DangerZone,
 };

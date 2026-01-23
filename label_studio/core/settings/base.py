@@ -293,6 +293,7 @@ CORS_ALLOW_METHODS = [
     'POST',
     'PUT',
 ]
+CORS_ALLOW_CREDENTIALS = True
 ALLOWED_HOSTS = get_env_list('ALLOWED_HOSTS', default=['*'])
 
 # Auth modules
@@ -826,6 +827,8 @@ if ENABLE_CSP := get_bool_env('ENABLE_CSP', True):
     CSP_CONNECT_SRC = (
         "'self'",
         "'report-sample'",
+        'http://localhost:8111',  # Allow frontend dev server to connect to backend
+        'http://localhost:8010',  # Allow backend to connect to frontend
         'https://*.google-analytics.com',
         'https://*.analytics.google.com',
         'https://analytics.google.com',

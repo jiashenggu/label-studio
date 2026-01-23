@@ -267,3 +267,5 @@ LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true LABEL_STUDIO_LOCAL_FILES_DOCUMENT_
 ```
 
 If you want to use file path instead of randomly generated path in /data/upload, check docs/source/guide/storage.md
+
+If you want to use HMR to develop, access port 8010 to see the HMR

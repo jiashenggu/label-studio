@@ -97,3 +97,12 @@ This software is licensed under the [Apache 2.0 LICENSE](../LICENSE) © [HumanSi
 [dm]: libs/datamanager/README.md
 [lso]: apps/labelstudio/README.md
 
+cd /home/gear/Documents/workspace/code/label-studio/web
+
+# 设置必要的环境变量
+export DJANGO_HOSTNAME=http://localhost:8111
+export FRONTEND_HMR=true
+export FRONTEND_HOSTNAME=http://localhost:8010
+
+# 启动前端开发服务器
+yarn ls:dev

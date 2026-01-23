@@ -343,6 +343,25 @@ class ProjectSummarySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class ProjectQualityMetricsSerializer(serializers.Serializer):
+    """Serializer for project quality metrics"""
+    total_annotations = serializers.IntegerField()
+    total_tasks = serializers.IntegerField()
+    completed_annotations = serializers.IntegerField()
+    skipped_annotations = serializers.IntegerField()
+    ground_truth_annotations = serializers.IntegerField()
+    avg_lead_time = serializers.FloatField()
+    median_lead_time = serializers.FloatField()
+    annotations_per_task = serializers.FloatField()
+    completion_rate = serializers.FloatField()
+    annotators_count = serializers.IntegerField()
+    annotations_by_user = serializers.ListField()
+    annotations_over_time = serializers.ListField()
+    lead_time_distribution = serializers.ListField()
+    recent_annotations = serializers.ListField()
+    task_completion_status = serializers.DictField()
+
+
 class ProjectImportSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectImport

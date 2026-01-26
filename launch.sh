@@ -5,18 +5,25 @@
 # Usage:
 #   ./launch.sh                    # Launch Label Studio only (lerobot mode)
 #   ./launch.sh --packds           # Launch with LanceDB frame server (packds mode)
+#   ./launch.sh --prod             # Use production port (8080)
+#   ./launch.sh --dev              # Use development port (8111, default)
 #
 
 set -e
 
+# =============================================================================
 # Configuration
-LABEL_STUDIO_PORT=8111
+# =============================================================================
+
+# Set to true for production (port 8080), false for development (port 8111)
+USE_PRODUCTION=false
+
 FRAME_SERVER_PORT=8765
 LANCEDB_PATH="${LANCEDB_PATH:-/home/gear/lerobot_lancedb}"
-# docker
-# API_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6ODA3MDYzNDg2MCwiaWF0IjoxNzYzNDM0ODYwLCJqdGkiOiJkMzQ3MDlkMWY4MDk0YTg0YmUwMGNhYTAxOGQwODVmMyIsInVzZXJfaWQiOiI0In0.OT8fXRdhod6MOWJl6UUS_m1wIOMoPj_KkTxAR8Mz4AE"
-# local
-API_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6ODA3NjYxOTg4OCwiaWF0IjoxNzY5NDE5ODg4LCJqdGkiOiJlMzllNDdmOTU1ODQ0NDllOTc5YTBiMjRkMWRjZGNiYSIsInVzZXJfaWQiOiIxIn0.JwaxWqNQ7VxeS0rbLBcGAWstG_vz5kFTxDt3VgEMFWk"
+
+# API keys for different environments
+API_KEY_PROD="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6ODA3MDYzNDg2MCwiaWF0IjoxNzYzNDM0ODYwLCJqdGkiOiJkMzQ3MDlkMWY4MDk0YTg0YmUwMGNhYTAxOGQwODVmMyIsInVzZXJfaWQiOiI0In0.OT8fXRdhod6MOWJl6UUS_m1wIOMoPj_KkTxAR8Mz4AE"
+API_KEY_DEV="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6ODA3NjYxOTg4OCwiaWF0IjoxNzY5NDE5ODg4LCJqdGkiOiJlMzllNDdmOTU1ODQ0NDllOTc5YTBiMjRkMWRjZGNiYSIsInVzZXJfaWQiOiIxIn0.JwaxWqNQ7VxeS0rbLBcGAWstG_vz5kFTxDt3VgEMFWk"
 
 # AWS/S3 credentials for lerobot mode
 export AWS_ACCESS_KEY_ID="jiashenggu:AUTH_team-gear"
@@ -25,7 +32,10 @@ export AWS_DEFAULT_REGION="us-east-1"
 export AWS_ENDPOINT_URL="https://pdx.s8k.io"
 export S3_ENDPOINT_URL="https://pdx.s8k.io"
 
+# =============================================================================
 # Parse arguments
+# =============================================================================
+
 MODE="lerobot"
 FPS=15.0
 MAX_EPISODES=""
@@ -34,6 +44,14 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --packds)
             MODE="packds"
+            shift
+            ;;
+        --prod|--production)
+            USE_PRODUCTION=true
+            shift
+            ;;
+        --dev|--development)
+            USE_PRODUCTION=false
             shift
             ;;
         --lancedb-path)
@@ -50,41 +68,120 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: ./launch.sh [--packds] [--lancedb-path PATH] [--fps N] [--max-episodes N]"
+            echo ""
+            echo "Usage: ./launch.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --packds              Use PackDS mode (LanceDB frame server)"
+            echo "  --prod, --production  Use production port (8080, Docker)"
+            echo "  --dev, --development  Use development port (8111, local)"
+            echo "  --lancedb-path PATH   Path to LanceDB database"
+            echo "  --fps N               Frame rate for playback (default: 15)"
+            echo "  --max-episodes N      Maximum episodes to import"
             exit 1
             ;;
     esac
 done
 
+# Set port and API key based on environment
+if [ "$USE_PRODUCTION" = true ]; then
+    LABEL_STUDIO_PORT=8080
+    API_KEY="$API_KEY_PROD"
+    ENV_NAME="Production (Docker)"
+else
+    LABEL_STUDIO_PORT=8111
+    API_KEY="$API_KEY_DEV"
+    ENV_NAME="Development (Local)"
+fi
+
 echo "========================================"
 echo "🏷️  Label Studio Launcher"
 echo "========================================"
+echo "Environment: $ENV_NAME"
+echo "Port: $LABEL_STUDIO_PORT"
 echo "Mode: $MODE"
 echo ""
 
-# # Stop existing containers
-# echo "🧹 Cleaning up existing containers..."
-# sudo docker rm -f ls 2>/dev/null || true
+# =============================================================================
+# Check if Label Studio is running
+# =============================================================================
 
-# # Start Label Studio
-# echo "🚀 Starting Label Studio..."
-# sudo docker run -d \
-#     -u $(id -u):$(id -g) \
-#     --name ls \
-#     --env-file ls.env \
-#     -p 0.0.0.0:${LABEL_STUDIO_PORT}:8080 \
-#     -v $(pwd)/mydata:/label-studio/data \
-#     -v ~/Videos/lerobot_storage:/home/gear/Videos/lerobot_storage \
-#     scruple/label-studio:latest \
-#     label-studio \
-#     --log-level DEBUG
+check_label_studio() {
+    curl -s "http://localhost:${LABEL_STUDIO_PORT}/health" > /dev/null 2>&1
+}
 
-# Wait for Label Studio to be ready
-echo "⏳ Waiting for Label Studio to start..."
-until curl -s http://localhost:${LABEL_STUDIO_PORT}/health > /dev/null; do
-    sleep 1
-done
-echo "✓ Label Studio is ready at http://localhost:${LABEL_STUDIO_PORT}"
+start_docker_label_studio() {
+    echo "🧹 Cleaning up existing containers..."
+    sudo docker rm -f ls 2>/dev/null || true
+    
+    echo "🚀 Starting Label Studio (Docker)..."
+    sudo docker run -d \
+        -u $(id -u):$(id -g) \
+        --name ls \
+        --env-file ls.env \
+        -p 0.0.0.0:${LABEL_STUDIO_PORT}:8080 \
+        -v $(pwd)/mydata:/label-studio/data \
+        -v ~/Videos/lerobot_storage:/home/gear/Videos/lerobot_storage \
+        scruple/label-studio:latest \
+        label-studio \
+        --log-level DEBUG
+    
+    echo "⏳ Waiting for Label Studio to start..."
+    until check_label_studio; do
+        sleep 1
+    done
+    echo "✓ Label Studio is ready at http://localhost:${LABEL_STUDIO_PORT}"
+}
+
+if check_label_studio; then
+    echo "✓ Label Studio is already running at http://localhost:${LABEL_STUDIO_PORT}"
+    echo ""
+    
+    # Ask user what to do
+    if [ "$USE_PRODUCTION" = true ]; then
+        echo "What would you like to do?"
+        echo "  1) Use existing Label Studio instance"
+        echo "  2) Restart Label Studio (Docker)"
+        echo ""
+        read -p "Enter choice [1]: " choice
+        choice=${choice:-1}
+        
+        case $choice in
+            1)
+                echo "Using existing instance..."
+                ;;
+            2)
+                start_docker_label_studio
+                ;;
+            *)
+                echo "Invalid choice. Using existing instance..."
+                ;;
+        esac
+    else
+        echo "Using existing development instance."
+        echo "(Start manually with: make run-dev)"
+    fi
+else
+    echo "Label Studio is not running on port ${LABEL_STUDIO_PORT}"
+    echo ""
+    
+    if [ "$USE_PRODUCTION" = true ]; then
+        start_docker_label_studio
+    else
+        echo "⚠️  Development mode: Please start Label Studio manually:"
+        echo "   cd label_studio && make run-dev"
+        echo ""
+        echo "⏳ Waiting for Label Studio to start..."
+        until check_label_studio; do
+            sleep 2
+        done
+        echo "✓ Label Studio is ready at http://localhost:${LABEL_STUDIO_PORT}"
+    fi
+fi
+
+# =============================================================================
+# Run mode-specific tasks
+# =============================================================================
 
 if [ "$MODE" = "lerobot" ]; then
     # LeRobot mode - create tasks from S3 videos
@@ -93,7 +190,8 @@ if [ "$MODE" = "lerobot" ]; then
     python create_tasks.py \
         --mode lerobot \
         --dataset_dir s3://GrootDatasets/yam_lerobot_v5/xdof.assembly_2026-01-26_05-42-20_v4_USA \
-        --api_key "$API_KEY"
+        --api_key "$API_KEY" \
+        --base_url "http://localhost:${LABEL_STUDIO_PORT}"
         
     echo ""
     echo "✅ Done! Open http://localhost:${LABEL_STUDIO_PORT}"

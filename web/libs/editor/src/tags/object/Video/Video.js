@@ -15,9 +15,9 @@ import { isDefined } from "../../../utils/utilities";
 const isSyncedBuffering = ff.isActive(ff.FF_SYNCED_BUFFERING);
 
 /**
- * Video tag plays a simple video file. Use for video annotation tasks such as classification and transcription.
+ * Video tag plays a simple video file or image sequence. Use for video annotation tasks such as classification and transcription.
  *
- * Use with the following data types: video
+ * Use with the following data types: video, image sequence (JPEG/PNG frames)
  *
  * ### Video format
  *
@@ -49,6 +49,15 @@ const isSyncedBuffering = ff.isActive(ff.FF_SYNCED_BUFFERING);
  * ffprobe -v error -show_format -show_streams -print_format json input.mp4
  * ```
  *
+ * ### Image Sequence Support (packds format)
+ *
+ * For datasets that store video frames as individual JPEG/PNG images (like packds format), you can use
+ * the `frameSequence` attribute instead of `value`. This loads frames directly without conversion to video.
+ *
+ * Frame sequence configuration can be:
+ * - **Array of URLs**: `$frames` where task data contains `["frame_001.jpg", "frame_002.jpg", ...]`
+ * - **Pattern-based**: JSON config like `{"type": "pattern", "pattern": "/frames/frame_{frame}.jpg", "totalFrames": 100, "padWidth": 4}`
+ *
  * @example
  * <!--Labeling configuration to display a video on the labeling interface-->
  * <View>
@@ -69,11 +78,27 @@ const isSyncedBuffering = ff.isActive(ff.FF_SYNCED_BUFFERING);
  *   <Video name="video" value="$video" />
  *   <TextArea name="ta" toName="video" />
  * </View>
+ * @example
+ * <!-- Image sequence (packds format) with array of frame URLs -->
+ * <View>
+ *   <Video name="video" frameSequence="$frames" frameRate="30" />
+ *   <VideoRectangle name="box" toName="video" />
+ *   <Labels name="label" toName="video">
+ *     <Label value="Object" />
+ *   </Labels>
+ * </View>
+ * @example
+ * <!-- Image sequence with URL pattern -->
+ * <View>
+ *   <Video name="video" frameSequence='{"type": "pattern", "pattern": "$baseUrl/frame_{frame}.jpg", "totalFrames": "$totalFrames", "padWidth": 6}' frameRate="30" />
+ *   <VideoRectangle name="box" toName="video" />
+ * </View>
  * @name Video
  * @meta_title Video Tag for Video Labeling
  * @meta_description Customize Label Studio with the Video tag for basic video annotation tasks for machine learning and data science projects.
  * @param {string} name Name of the element
- * @param {string} value URL of the video
+ * @param {string} [value] URL of the video file (use this OR frameSequence, not both)
+ * @param {string} [frameSequence] Array of frame URLs or pattern config for image sequences (use this OR value, not both)
  * @param {number} [frameRate=24] video frame rate per second; default is 24; can use task data like `$fps`
  * @param {string} [sync] object name to sync with
  * @param {boolean} [muted=false] muted video
@@ -83,35 +108,45 @@ const isSyncedBuffering = ff.isActive(ff.FF_SYNCED_BUFFERING);
  * @param {number} [minPlaybackSpeed=1] minimum allowed playback speed; defaultPlaybackSpeed cannot be set below this value
  */
 
-const TagAttrs = types.model({
-  value: types.maybeNull(types.string),
-  hotkey: types.maybeNull(types.string),
-  framerate: types.optional(types.string, "24"),
-  height: types.optional(types.string, "600"),
-  timelineheight: types.maybeNull(types.string),
-  muted: false,
-  defaultplaybackspeed: types.optional(types.union(types.string, types.number), "1"),
-  minplaybackspeed: types.optional(types.union(types.string, types.number), "0.25"),
+const TagAttrs = types
+  .model({
+    value: types.maybeNull(types.string),
+    framesequence: types.maybeNull(types.string), // For image sequence support (packds format)
+    hotkey: types.maybeNull(types.string),
+    framerate: types.optional(types.string, "24"),
+    height: types.optional(types.string, "600"),
+    timelineheight: types.maybeNull(types.string),
+    muted: false,
+    defaultplaybackspeed: types.optional(types.union(types.string, types.number), "1"),
+    minplaybackspeed: types.optional(types.union(types.string, types.number), "0.25"),
 
-  resolver: types.maybeNull(types.string), 
-})
-.views(self => ({
-  // getter：把 resolver 当 optionList 解析
-  get optionList() {
-    if (!self.resolver) return [];
-    try { return JSON.parse(self.resolver); }
-    catch (e) {
-      console.warn('[Video] resolver JSON 解析失败', e);
-      return [];
-    }
-  },
-}));
+    resolver: types.maybeNull(types.string),
+  })
+  .views((self) => ({
+    // getter：把 resolver 当 optionList 解析
+    get optionList() {
+      if (!self.resolver) return [];
+      try {
+        return JSON.parse(self.resolver);
+      } catch (e) {
+        console.warn("[Video] resolver JSON 解析失败", e);
+        return [];
+      }
+    },
 
+    /**
+     * Check if this Video tag is configured to use an image sequence instead of a video file
+     */
+    get isImageSequence() {
+      return !!self.framesequence;
+    },
+  }));
 
 const Model = types
   .model({
     type: "video",
     _value: types.optional(types.string, ""),
+    _frameSequenceConfig: types.maybeNull(types.frozen()), // Parsed frame sequence config
     // special flag to store labels inside result, but under original type
     // @todo make it able to be disabled
     mergeLabelsAndResults: true,
@@ -132,6 +167,64 @@ const Model = types
 
     get currentFrame() {
       return self.ref.current?.position ?? 1;
+    },
+
+    /**
+     * Get the parsed frame sequence configuration for image sequence mode
+     * Returns null if not using image sequence mode
+     */
+    get frameSequenceConfig() {
+      if (!self.framesequence) return null;
+      if (self._frameSequenceConfig) return self._frameSequenceConfig;
+
+      const data = self.store?.task?.dataObj ?? {};
+      const rawValue = parseValue(self.framesequence, data);
+
+      // Handle array of URLs from task data
+      if (Array.isArray(rawValue)) {
+        return {
+          type: "array",
+          urls: rawValue,
+        };
+      }
+
+      // Handle JSON string config
+      if (typeof rawValue === "string") {
+        try {
+          const parsed = JSON.parse(rawValue);
+
+          // Array of URLs
+          if (Array.isArray(parsed)) {
+            return {
+              type: "array",
+              urls: parsed,
+            };
+          }
+
+          // Pattern-based config - resolve any template variables in the pattern
+          if (parsed.type === "pattern" && parsed.pattern) {
+            return {
+              type: "pattern",
+              pattern: parseValue(parsed.pattern, data),
+              totalFrames:
+                typeof parsed.totalFrames === "string"
+                  ? Number(parseValue(parsed.totalFrames, data))
+                  : parsed.totalFrames,
+              startFrame: parsed.startFrame ?? 0,
+              padWidth: parsed.padWidth ?? 0,
+            };
+          }
+
+          // Already a valid config object
+          if (parsed.type === "array" && Array.isArray(parsed.urls)) {
+            return parsed;
+          }
+        } catch {
+          console.warn("[Video] Failed to parse framesequence:", rawValue);
+        }
+      }
+
+      return null;
     },
 
     get timelineControl() {
@@ -453,7 +546,7 @@ const Model = types
             [labels.valueType]: labels.selectedValues(),
           };
         }
-        
+
         return ff.isActive(ff.FF_MULTIPLE_LABELS_REGIONS)
           ? self.annotation.createResult(value, labeling, control, self, false, additionalStates)
           : self.annotation.createResult(value, labeling, control, self, false);

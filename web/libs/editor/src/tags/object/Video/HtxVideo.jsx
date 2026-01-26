@@ -131,7 +131,8 @@ const VideoConfig = observer(({ item }) => {
 });
 
 const HtxVideoView = ({ item, store }) => {
-  if (!item._value) return null;
+  // Support both video URL mode and image sequence mode
+  if (!item._value && !item.frameSequenceConfig) return null;
 
   const limitCanvasDrawingBoundaries = !store.settings.videoDrawOutside;
   const videoBlockRef = useRef();
@@ -529,6 +530,7 @@ const HtxVideoView = ({ item, store }) => {
                 <VideoCanvas
                   ref={item.ref}
                   src={item._value}
+                  frameSequence={item.frameSequenceConfig}
                   width={videoSize[0]}
                   height={videoSize[1]}
                   muted={item.muted}

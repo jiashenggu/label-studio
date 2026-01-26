@@ -10,12 +10,16 @@ import { useLoopRange } from "./hooks/useLoopRange";
 import { MAX_ZOOM, MIN_ZOOM } from "./VideoConstants";
 import { VirtualCanvas } from "./VirtualCanvas";
 import { VirtualVideo } from "./VirtualVideo";
+import { VirtualImageSequence, type ImageSequenceRef, type FrameUrlConfig } from "./VirtualImageSequence";
 import { ff } from "@humansignal/core";
 
 const isSyncedBuffering = ff.isActive(ff.FF_SYNCED_BUFFERING);
 
 type VideoProps = {
-  src: string;
+  /** Video URL (for traditional video files) */
+  src?: string;
+  /** Frame sequence config (for JPEG/PNG image sequences like packds format) */
+  frameSequence?: FrameUrlConfig;
   width?: number;
   height?: number;
   position?: number;
@@ -119,8 +123,12 @@ export const VideoCanvas = memo(
     const canvasRef = useRef<HTMLCanvasElement>();
     const contextRef = useRef<CanvasRenderingContext2D | null>();
     const videoRef = useRef<HTMLVideoElement>();
+    const imageSequenceRef = useRef<ImageSequenceRef>();
     const supportedFileTypeRef = useRef<boolean | null>(null);
     const hasLoadedRef = useRef<boolean>(false);
+
+    // Determine if we're using image sequence mode
+    const isImageSequenceMode = !!props.frameSequence;
 
     const canvasWidth = useMemo(() => props.width ?? 600, [props.width]);
     const canvasHeight = useMemo(() => props.height ?? 600, [props.height]);
@@ -170,33 +178,42 @@ export const VideoCanvas = memo(
 
     const drawVideo = useCallback(() => {
       try {
-        if (contextRef.current && videoRef.current) {
-          const context = contextRef.current;
-          const { width, height } = videoDimensions;
+        if (!contextRef.current) return;
 
-          if (width === 0 && height === 0) return;
+        // Get the drawable source - either video element or current image from sequence
+        const drawableSource = isImageSequenceMode ? imageSequenceRef.current?.drawableSource : videoRef.current;
 
-          const resultWidth = width * zoom;
-          const resultHeight = height * zoom;
+        if (!drawableSource) return;
 
-          const offsetLeft = (canvasWidth - resultWidth) / 2 + pan.x;
-          const offsetTop = (canvasHeight - resultHeight) / 2 + pan.y;
+        const context = contextRef.current;
+        const { width, height } = videoDimensions;
 
-          context.clearRect(0, 0, canvasWidth, canvasHeight);
+        if (width === 0 && height === 0) return;
 
-          context.filter = filters;
-          context.drawImage(videoRef.current, 0, 0, width, height, offsetLeft, offsetTop, resultWidth, resultHeight);
-        }
+        const resultWidth = width * zoom;
+        const resultHeight = height * zoom;
+
+        const offsetLeft = (canvasWidth - resultWidth) / 2 + pan.x;
+        const offsetTop = (canvasHeight - resultHeight) / 2 + pan.y;
+
+        context.clearRect(0, 0, canvasWidth, canvasHeight);
+
+        context.filter = filters;
+        context.drawImage(drawableSource, 0, 0, width, height, offsetLeft, offsetTop, resultWidth, resultHeight);
       } catch (e) {
-        console.log("Error rendering video", e);
+        console.log("Error rendering video/image sequence", e);
       }
-    }, [videoDimensions, zoom, pan, filters, canvasWidth, canvasHeight]);
+    }, [videoDimensions, zoom, pan, filters, canvasWidth, canvasHeight, isImageSequenceMode]);
 
     const updateFrame = useCallback(
       (force = false) => {
         if (!contextRef.current) return;
 
-        const currentTime = videoRef.current?.currentTime ?? 0;
+        // Get current time from either video or image sequence
+        const currentTime = isImageSequenceMode
+          ? (imageSequenceRef.current?.currentTime ?? 0)
+          : (videoRef.current?.currentTime ?? 0);
+
         const frameNumber = isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
           ? Math.ceil(currentTime * framerate)
           : Math.round(currentTime * framerate);
@@ -209,7 +226,7 @@ export const VideoCanvas = memo(
           onChange(frame, length);
         }
       },
-      [framerate, currentFrame, drawVideo, props.onFrameChange, length],
+      [framerate, currentFrame, drawVideo, props.onFrameChange, length, isImageSequenceMode],
     );
 
     const handleVideoBuffering = useCallback(
@@ -228,26 +245,33 @@ export const VideoCanvas = memo(
     const updateBuffering = useUpdateBuffering(videoRef, handleVideoBuffering);
 
     const delayedUpdate = useCallback(() => {
-      if (!videoRef.current) return;
+      // Support both video and image sequence modes
+      const mediaRef = isImageSequenceMode ? imageSequenceRef.current : videoRef.current;
+      if (!mediaRef) return;
       if (!contextRef.current) return;
 
-      const video = videoRef.current;
+      if (!playing) updateFrame(true);
 
-      if (video) {
-        if (!playing) updateFrame(true);
-
-        if (isSyncedBuffering) {
-          updateBuffering();
-        } else {
-          if (video.networkState === video.NETWORK_IDLE) {
-            hasLoadedRef.current = true;
-            setBuffering(false);
+      if (!isImageSequenceMode) {
+        // Video-specific buffering handling
+        const video = videoRef.current;
+        if (video) {
+          if (isSyncedBuffering) {
+            updateBuffering();
           } else {
-            setBuffering(true);
+            if (video.networkState === video.NETWORK_IDLE) {
+              hasLoadedRef.current = true;
+              setBuffering(false);
+            } else {
+              setBuffering(true);
+            }
           }
         }
+      } else {
+        // Image sequence buffering is handled by VirtualImageSequence internally
+        hasLoadedRef.current = true;
       }
-    }, [playing, updateFrame]);
+    }, [playing, updateFrame, isImageSequenceMode]);
 
     // VIDEO EVENTS'
     const handleVideoPlay = useCallback(() => {
@@ -430,26 +454,35 @@ export const VideoCanvas = memo(
       width: canvasWidth,
       height: canvasHeight,
       set currentTime(time: number) {
-        const video = videoRef.current;
-
-        if (video && time !== this.currentTime) {
-          video.currentTime = time;
+        if (isImageSequenceMode) {
+          const seq = imageSequenceRef.current;
+          if (seq && time !== seq.currentTime) {
+            seq.currentTime = time;
+          }
+        } else {
+          const video = videoRef.current;
+          if (video && time !== this.currentTime) {
+            video.currentTime = time;
+          }
         }
       },
       get currentTime() {
-        return videoRef.current?.currentTime ?? 0;
+        return isImageSequenceMode
+          ? (imageSequenceRef.current?.currentTime ?? 0)
+          : (videoRef.current?.currentTime ?? 0);
       },
       get duration() {
-        return videoRef.current?.duration ?? 0;
+        return isImageSequenceMode ? (imageSequenceRef.current?.duration ?? 0) : (videoRef.current?.duration ?? 0);
       },
       get volume() {
-        return videoRef.current?.volume ?? 1;
+        return isImageSequenceMode ? 1 : (videoRef.current?.volume ?? 1);
       },
       set volume(value: number) {
-        const video = videoRef.current;
-
-        if (video) {
-          video.currentTime = value;
+        if (!isImageSequenceMode) {
+          const video = videoRef.current;
+          if (video) {
+            video.volume = value;
+          }
         }
       },
       adjustPan(x, y) {
@@ -474,15 +507,23 @@ export const VideoCanvas = memo(
       },
       play() {
         prepareLoop();
-        videoRef.current?.play();
+        if (isImageSequenceMode) {
+          imageSequenceRef.current?.play();
+        } else {
+          videoRef.current?.play();
+        }
       },
       pause() {
-        videoRef.current?.pause();
-        if (isFF(FF_VIDEO_FRAME_SEEK_PRECISION)) {
-          // If duration is not finite,
-          // then we are trying to pause (most probably caused by buffering) before video is loaded
-          // so we need to correct the duration to 0 to avoid NaN currentTime
-          this.currentTime = clamp(this.frameSteppedTime(), 0, this.duration || 0);
+        if (isImageSequenceMode) {
+          imageSequenceRef.current?.pause();
+        } else {
+          videoRef.current?.pause();
+          if (isFF(FF_VIDEO_FRAME_SEEK_PRECISION)) {
+            // If duration is not finite,
+            // then we are trying to pause (most probably caused by buffering) before video is loaded
+            // so we need to correct the duration to 0 to avoid NaN currentTime
+            this.currentTime = clamp(this.frameSteppedTime(), 0, this.duration || 0);
+          }
         }
       },
       seek(time) {
@@ -545,7 +586,11 @@ export const VideoCanvas = memo(
       }
     }, [zoom, canvasWidth, canvasHeight, videoDimensions]);
 
+    // Video loading effect - only for video mode
     useEffect(() => {
+      // Skip this effect for image sequence mode - handled by VirtualImageSequence
+      if (isImageSequenceMode) return;
+
       let isLoaded = false;
       let loadTimeout: ReturnType<typeof setTimeout> | undefined = undefined;
       let timeout: ReturnType<typeof setTimeout> | undefined = undefined;
@@ -601,7 +646,7 @@ export const VideoCanvas = memo(
           clearTimeout(loadTimeout);
         }
       };
-    }, []);
+    }, [isImageSequenceMode]);
 
     // Trick to load/dispose the video
     useEffect(() => {
@@ -615,9 +660,74 @@ export const VideoCanvas = memo(
         contextRef.current = undefined;
         canvasRef.current = undefined;
         videoRef.current = undefined;
+        imageSequenceRef.current = undefined;
         rootRef.current = undefined;
       };
     }, []);
+
+    // Stable callbacks for image sequence to prevent re-render loops
+    const handleImageSequenceLoad = useCallback(
+      ({ width, height, length: frameCount }: { width: number; height: number; duration: number; length: number }) => {
+        const dimensions = {
+          width,
+          height,
+          ratio: zoomRatio(canvasWidth, canvasHeight, width, height),
+        };
+        setVideoDimensions(dimensions);
+        setLength(frameCount);
+        setLoading(false);
+        hasLoadedRef.current = true;
+        // Defer the callback to avoid state updates during render
+        setTimeout(() => {
+          props.onLoad?.({
+            currentFrame: 1,
+            length: frameCount,
+            playing: false,
+            zoom: 1,
+            pan: { x: 0, y: 0 },
+            videoDimensions: dimensions,
+            width: canvasWidth,
+            height: canvasHeight,
+            currentTime: 0,
+            duration: frameCount / framerate,
+            volume: 1,
+            adjustPan: (x: number, y: number) => ({ x, y }),
+            setZoom: () => {},
+            setPan: () => {},
+            setContrast: () => {},
+            setBrightness: () => {},
+            setSaturation: () => {},
+            play: () => {},
+            pause: () => {},
+            seek: () => {},
+            frameSteppedTime: (t?: number) => t ?? 0,
+            goToFrame: () => {},
+          });
+        }, 0);
+      },
+      [canvasWidth, canvasHeight, framerate, props.onLoad],
+    );
+
+    const handleImageSequenceTimeUpdate = useCallback(() => {
+      if (!isSyncedBuffering) {
+        delayedUpdate();
+      }
+      props.onTimeUpdate?.({});
+    }, [delayedUpdate, props.onTimeUpdate]);
+
+    const handleImageSequenceSeeked = useCallback(() => {
+      if (!isSyncedBuffering) {
+        delayedUpdate();
+      }
+      props.onSeeked?.();
+    }, [delayedUpdate, props.onSeeked]);
+
+    const handleImageSequenceError = useCallback(
+      (error: Error) => {
+        props.onError?.(error);
+      },
+      [props.onError],
+    );
 
     return (
       <Block ref={rootRef} name="video-canvas">
@@ -647,42 +757,62 @@ export const VideoCanvas = memo(
           {!isSyncedBuffering && !loading && buffering && <Elem name="buffering" aria-label="Buffering Media Source" />}
         </Elem>
 
-        <VirtualVideo
-          ref={videoRef as MutableRefObject<HTMLVideoElement>}
-          controls={false}
-          preload="auto"
-          src={props.src}
-          speed={props.speed}
-          muted={props.muted ?? false}
-          canPlayType={(supported) => (supportedFileTypeRef.current = supported)}
-          onPlay={handleVideoPlay}
-          onPause={handleVideoPause}
-          onLoadedData={delayedUpdate}
-          onCanPlay={delayedUpdate}
-          onSeeked={(event) => {
-            if (!isSyncedBuffering) {
-              delayedUpdate();
-            }
-            props.onSeeked?.(event);
-          }}
-          onSeeking={(event) => {
-            if (!isSyncedBuffering) {
-              delayedUpdate();
-            }
-            props.onSeeked?.(event);
-          }}
-          onTimeUpdate={(event) => {
-            if (!isSyncedBuffering) {
-              delayedUpdate();
-            }
-            props.onTimeUpdate?.(event);
-          }}
-          onProgress={delayedUpdate}
-          onPlaying={handleVideoPlaying}
-          onWaiting={handleVideoWaiting}
-          onEnded={handleVideoEnded}
-          onError={handleVideoError}
-        />
+        {/* Render either VirtualVideo (for video files) or VirtualImageSequence (for JPEG sequences) */}
+        {isImageSequenceMode ? (
+          <VirtualImageSequence
+            ref={imageSequenceRef as MutableRefObject<ImageSequenceRef>}
+            frameConfig={props.frameSequence!}
+            framerate={framerate}
+            speed={props.speed}
+            muted={props.muted ?? false}
+            onLoad={handleImageSequenceLoad}
+            onError={handleImageSequenceError}
+            onPlay={handleVideoPlay}
+            onPause={handleVideoPause}
+            onEnded={handleVideoEnded}
+            onTimeUpdate={handleImageSequenceTimeUpdate}
+            onSeeked={handleImageSequenceSeeked}
+            onWaiting={handleVideoWaiting}
+            onPlaying={handleVideoPlaying}
+          />
+        ) : (
+          <VirtualVideo
+            ref={videoRef as MutableRefObject<HTMLVideoElement>}
+            controls={false}
+            preload="auto"
+            src={props.src}
+            speed={props.speed}
+            muted={props.muted ?? false}
+            canPlayType={(supported) => (supportedFileTypeRef.current = supported)}
+            onPlay={handleVideoPlay}
+            onPause={handleVideoPause}
+            onLoadedData={delayedUpdate}
+            onCanPlay={delayedUpdate}
+            onSeeked={(event) => {
+              if (!isSyncedBuffering) {
+                delayedUpdate();
+              }
+              props.onSeeked?.(event);
+            }}
+            onSeeking={(event) => {
+              if (!isSyncedBuffering) {
+                delayedUpdate();
+              }
+              props.onSeeked?.(event);
+            }}
+            onTimeUpdate={(event) => {
+              if (!isSyncedBuffering) {
+                delayedUpdate();
+              }
+              props.onTimeUpdate?.(event);
+            }}
+            onProgress={delayedUpdate}
+            onPlaying={handleVideoPlaying}
+            onWaiting={handleVideoWaiting}
+            onEnded={handleVideoEnded}
+            onError={handleVideoError}
+          />
+        )}
       </Block>
     );
   }),

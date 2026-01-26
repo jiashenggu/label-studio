@@ -34,7 +34,7 @@ from label_studio_sdk import LabelStudio
 
 # Default configuration
 DEFAULT_LS_URL = os.environ.get("LABEL_STUDIO_URL", "http://localhost:8080")
-DEFAULT_LANCEDB_PATH = os.environ.get("LANCEDB_PATH", "/home/gear/lerobot_lancedb")
+DEFAULT_DATASET_DIR = os.environ.get("DATASET_DIR", "/home/gear/lerobot_lancedb")
 DEFAULT_TABLE_NAME = "steps"
 DEFAULT_FRAME_SERVER_PORT = 8765
 DEFAULT_FPS = 15.0
@@ -509,9 +509,9 @@ def main() -> int:
         help="Label Studio URL",
     )
     parser.add_argument(
-        "--lancedb-path",
-        default=DEFAULT_LANCEDB_PATH,
-        help="Path to LanceDB database",
+        "--dataset-dir",
+        default=DEFAULT_DATASET_DIR,
+        help="Path to LanceDB database (dataset directory)",
     )
     parser.add_argument(
         "--table-name",
@@ -546,6 +546,7 @@ def main() -> int:
 
     base_url = args.base_url.rstrip("/")
     frame_server_url = f"http://localhost:{args.frame_server_port}"
+    dataset_dir = args.dataset_dir
 
     try:
         # Start frame server
@@ -554,7 +555,7 @@ def main() -> int:
         print("=" * 60)
 
         server, view_map = start_frame_server(
-            args.lancedb_path,
+            dataset_dir,
             args.table_name,
             args.frame_server_port,
         )
@@ -562,7 +563,7 @@ def main() -> int:
         # Get all episodes
         print(f"\n📊 Loading episodes from LanceDB...")
         episodes = get_all_episodes(
-            args.lancedb_path,
+            dataset_dir,
             args.table_name,
             args.max_episodes,
         )

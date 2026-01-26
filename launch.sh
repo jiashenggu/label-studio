@@ -3,10 +3,9 @@
 # Launch Label Studio with optional frame server for image sequence support
 #
 # Usage:
-#   ./launch.sh                    # Launch Label Studio only (lerobot mode)
-#   ./launch.sh --packds           # Launch with LanceDB frame server (packds mode)
-#   ./launch.sh --prod             # Use production port (8080)
-#   ./launch.sh --dev              # Use development port (8111, default)
+#   ./launch.sh --dataset-dir PATH              # LeRobot mode (S3 videos)
+#   ./launch.sh --dataset-dir PATH --packds     # PackDS mode (LanceDB frames)
+#   ./launch.sh --prod --dataset-dir PATH       # Use production port (8080)
 #
 
 set -e
@@ -19,7 +18,7 @@ set -e
 USE_PRODUCTION=false
 
 FRAME_SERVER_PORT=8765
-LANCEDB_PATH="${LANCEDB_PATH:-/home/gear/lerobot_lancedb}"
+DATASET_DIR="${DATASET_DIR:-}"
 
 # API keys for different environments
 API_KEY_PROD="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6ODA3MDYzNDg2MCwiaWF0IjoxNzYzNDM0ODYwLCJqdGkiOiJkMzQ3MDlkMWY4MDk0YTg0YmUwMGNhYTAxOGQwODVmMyIsInVzZXJfaWQiOiI0In0.OT8fXRdhod6MOWJl6UUS_m1wIOMoPj_KkTxAR8Mz4AE"
@@ -46,6 +45,10 @@ while [[ $# -gt 0 ]]; do
             MODE="packds"
             shift
             ;;
+        --lerobot)
+            MODE="lerobot"
+            shift
+            ;;
         --prod|--production)
             USE_PRODUCTION=true
             shift
@@ -54,8 +57,8 @@ while [[ $# -gt 0 ]]; do
             USE_PRODUCTION=false
             shift
             ;;
-        --lancedb-path)
-            LANCEDB_PATH="$2"
+        --dataset-dir|--dataset_dir)
+            DATASET_DIR="$2"
             shift 2
             ;;
         --fps)
@@ -66,22 +69,40 @@ while [[ $# -gt 0 ]]; do
             MAX_EPISODES="$2"
             shift 2
             ;;
-        *)
-            echo "Unknown option: $1"
-            echo ""
+        -h|--help)
             echo "Usage: ./launch.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --packds              Use PackDS mode (LanceDB frame server)"
+            echo "  --dataset-dir PATH    Dataset directory (required)"
+            echo "                        - lerobot: S3 path (s3://bucket/path) or local path"
+            echo "                        - packds: Path to LanceDB database"
+            echo "  --packds              Use PackDS mode (LanceDB frame sequences)"
+            echo "  --lerobot             Use LeRobot mode (S3/local videos, default)"
             echo "  --prod, --production  Use production port (8080, Docker)"
             echo "  --dev, --development  Use development port (8111, local)"
-            echo "  --lancedb-path PATH   Path to LanceDB database"
             echo "  --fps N               Frame rate for playback (default: 15)"
-            echo "  --max-episodes N      Maximum episodes to import"
+            echo "  --max-episodes N      Maximum episodes to import (packds only)"
+            echo ""
+            echo "Examples:"
+            echo "  ./launch.sh --dataset-dir s3://bucket/lerobot_dataset"
+            echo "  ./launch.sh --packds --dataset-dir /path/to/lancedb"
+            echo "  ./launch.sh --prod --packds --dataset-dir /path/to/lancedb"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
             exit 1
             ;;
     esac
 done
+
+# Validate required arguments
+if [ -z "$DATASET_DIR" ]; then
+    echo "Error: --dataset-dir is required"
+    echo "Use --help for usage information"
+    exit 1
+fi
 
 # Set port and API key based on environment
 if [ "$USE_PRODUCTION" = true ]; then
@@ -100,6 +121,7 @@ echo "========================================"
 echo "Environment: $ENV_NAME"
 echo "Port: $LABEL_STUDIO_PORT"
 echo "Mode: $MODE"
+echo "Dataset: $DATASET_DIR"
 echo ""
 
 # =============================================================================
@@ -159,7 +181,7 @@ if check_label_studio; then
         esac
     else
         echo "Using existing development instance."
-        echo "(Start manually with: make run-dev)"
+        echo "(Start manually with command in README.md)"
     fi
 else
     echo "Label Studio is not running on port ${LABEL_STUDIO_PORT}"
@@ -184,12 +206,15 @@ fi
 # =============================================================================
 
 if [ "$MODE" = "lerobot" ]; then
-    # LeRobot mode - create tasks from S3 videos
+    # LeRobot mode - create tasks from S3/local videos
     echo ""
-    echo "📹 Creating tasks from S3 videos..."
+    echo "📹 LeRobot mode - Creating tasks from videos..."
+    echo "   Dataset: $DATASET_DIR"
+    echo ""
+    
     python create_tasks.py \
         --mode lerobot \
-        --dataset_dir s3://GrootDatasets/yam_lerobot_v5/xdof.assembly_2026-01-26_05-42-20_v4_USA \
+        --dataset_dir "$DATASET_DIR" \
         --api_key "$API_KEY" \
         --base_url "http://localhost:${LABEL_STUDIO_PORT}"
         
@@ -198,10 +223,9 @@ if [ "$MODE" = "lerobot" ]; then
     
 elif [ "$MODE" = "packds" ]; then
     # PackDS mode - start frame server and create tasks with image sequences
-    # All views and all episodes are included automatically
     echo ""
     echo "📦 PackDS mode - Starting frame server..."
-    echo "   LanceDB: $LANCEDB_PATH"
+    echo "   Dataset (LanceDB): $DATASET_DIR"
     echo "   FPS: $FPS"
     if [ -n "$MAX_EPISODES" ]; then
         echo "   Max episodes: $MAX_EPISODES"
@@ -220,7 +244,7 @@ elif [ "$MODE" = "packds" ]; then
     python frame_server.py \
         --api-key "$API_KEY" \
         --base-url "http://localhost:${LABEL_STUDIO_PORT}" \
-        --lancedb-path "$LANCEDB_PATH" \
+        --dataset-dir "$DATASET_DIR" \
         --fps "$FPS" \
         --frame-server-port "$FRAME_SERVER_PORT" \
         $EXTRA_ARGS

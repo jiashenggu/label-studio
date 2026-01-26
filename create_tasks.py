@@ -1,28 +1,22 @@
 """
-Unified task creation script for Label Studio.
+Task creation script for Label Studio.
 
-Supports two modes:
-1. lerobot: Import video files from local or S3 storage (LeRobot format)
-2. packds: Import frame sequences from LanceDB frame server (PackDS format)
+Import video files from local or S3 storage (LeRobot format).
 """
 
 from label_studio_sdk import LabelStudio
 import tyro
 from dataclasses import dataclass
-from typing import Optional, Literal
+from typing import Optional
 import os
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-import requests
 import re
 
 
 @dataclass
 class Config:
     """Configuration for creating Label Studio tasks."""
-    
-    mode: Literal["lerobot", "packds"] = "lerobot"
-    """Mode: 'lerobot' for video files, 'packds' for frame sequences from LanceDB."""
     
     api_key: str = None
     """Label Studio API token. Create one in Account & Settings → Access Tokens."""
@@ -36,22 +30,11 @@ class Config:
     project_name: Optional[str] = None
     """Project name (for new projects)."""
     
-    # LeRobot mode parameters
     dataset_dir: Optional[str] = None
-    """[lerobot mode] Root directory with videos (local path or s3://bucket/prefix)."""
+    """Root directory with videos (local path or s3://bucket/prefix)."""
     
     storage_name: Optional[str] = None
-    """[lerobot mode] Name for storage connection."""
-    
-    # PackDS mode parameters
-    frame_server_url: Optional[str] = None
-    """[packds mode] URL of LanceDB frame server (e.g., http://localhost:8000)."""
-    
-    max_episodes: int = 100
-    """[packds mode] Maximum number of episodes to import."""
-    
-    episode_filter: Optional[int] = None
-    """[packds mode] Filter by specific episode index."""
+    """Name for storage connection."""
     
     fps: float = 15.0
     """Frame rate for video playback."""
@@ -345,154 +328,63 @@ def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
     return result.task_count
 
 
-def import_packds_tasks(cfg: Config, client: LabelStudio, project) -> int:
-    """Import tasks from frame sequences via LanceDB server - PackDS format."""
-    
-    print("=" * 60)
-    print("📦 PACKDS MODE: Importing from LanceDB")
-    print("=" * 60)
-    print()
-    
-    if not cfg.frame_server_url:
-        raise ValueError("frame_server_url is required for packds mode")
-    
-    # Fetch tasks from frame server
-    print(f"📡 Fetching tasks from frame server: {cfg.frame_server_url}")
-    
-    params = {
-        "max_episodes": cfg.max_episodes,
-        "base_url": cfg.frame_server_url,
-    }
-    
-    if cfg.episode_filter is not None:
-        params["episode_filter"] = cfg.episode_filter
-    
-    try:
-        response = requests.get(
-            f"{cfg.frame_server_url}/tasks",
-            params=params,
-            timeout=30
-        )
-        response.raise_for_status()
-        data = response.json()
-        tasks = data.get("tasks", [])
-        print(f"✓ Retrieved {len(tasks)} tasks")
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error connecting to frame server: {e}")
-        print("\nMake sure the server is running:")
-        cmd = "python lancedb_frame_server.py --lancedb-path /path/to/db"
-        print(f"  {cmd}")
-        raise
-    
-    if not tasks:
-        print("⚠️  No tasks found!")
-        return 0
-    
-    print()
-    print("📋 Sample task structure:")
-    sample = tasks[0]
-    print(f"  Episode: {sample.get('episode_idx')}")
-    print(f"  Task: {sample.get('task_text', 'N/A')}")
-    
-    for view in ['ego_view', 'left_wrist_view', 'right_wrist_view']:
-        if view in sample:
-            url = sample[view]
-            if isinstance(url, str):
-                print(f"  {view}: {url[:80]}...")
-            else:
-                print(f"  {view}: (unexpected format)")
-    
-    print()
-    print(f"📥 Importing {len(tasks)} tasks to Label Studio...")
-    
-    result = client.projects.import_tasks(
-        request=tasks,
-        id=project.id,
-        return_task_ids=True
-    )
-    
-    print(f"✓ Successfully imported {result.task_count} tasks")
-    return result.task_count
-
-
 def ensure_export_storage(cfg: Config, client: LabelStudio, project_id: int):
     """Create or reuse export storage connection."""
     
     print()
     print("💾 Setting up export storage...")
     
-    if cfg.mode == "packds":
-        # For PackDS (frame sequences), use local directory
-        annotations_dir = "./annotations_episodes"
-        os.makedirs(annotations_dir, exist_ok=True)
+    if not cfg.dataset_dir:
+        print("⚠️  No dataset_dir specified, skipping export storage")
+        return None
+    
+    if cfg.storage_name is None:
+        title = f"Export Storage {cfg.dataset_dir}"
+    else:
+        title = f"Export Storage {cfg.storage_name}"
+    
+    # S3 export
+    if cfg.dataset_dir.startswith("s3://"):
+        bucket, prefix = cfg.dataset_dir.replace("s3://", "").split("/", 1)
+        prefix = prefix.rstrip("/") + "/annotations"
         
-        title = "Export Storage (Frame Sequences)"
+        for st in client.export_storage.s3.list(project=project_id):
+            if st.title == title:
+                print("✓ Reusing existing S3 export storage")
+                return st
+        
+        st = client.export_storage.s3.create(
+            project=project_id,
+            bucket=bucket,
+            prefix=prefix,
+            aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+            aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+            region_name="us-east-1",
+            s3endpoint=os.environ.get("S3_ENDPOINT_URL", None),
+            title=title,
+            can_delete_objects=False,
+        )
+        print(f"✓ Created S3 export storage: s3://{bucket}/{prefix}")
+    
+    # Local export
+    else:
+        local_path = os.path.join(cfg.dataset_dir, "annotations")
+        os.makedirs(local_path, exist_ok=True)
         
         for st in client.export_storage.local.list(project=project_id):
-            if title in st.title or annotations_dir in st.path:
-                print("✓ Using existing export storage")
+            if st.title == title:
+                print("✓ Reusing existing local export storage")
                 return st
         
         st = client.export_storage.local.create(
             project=project_id,
-            path=os.path.abspath(annotations_dir),
-            title=title
+            path=local_path,
+            title=title,
+            use_blob_urls=False,
         )
-        print(f"✓ Created export storage: {annotations_dir}")
-        return st
+        print(f"✓ Created local export storage: {local_path}")
     
-    else:  # lerobot mode
-        if not cfg.dataset_dir:
-            print("⚠️  No dataset_dir specified, skipping export storage")
-            return None
-        
-        if cfg.storage_name is None:
-            title = f"Export Storage {cfg.dataset_dir}"
-        else:
-            title = f"Export Storage {cfg.storage_name}"
-        
-        # S3 export
-        if cfg.dataset_dir.startswith("s3://"):
-            bucket, prefix = cfg.dataset_dir.replace("s3://", "").split("/", 1)
-            prefix = prefix.rstrip("/") + "/annotations"
-            
-            for st in client.export_storage.s3.list(project=project_id):
-                if st.title == title:
-                    print("✓ Reusing existing S3 export storage")
-                    return st
-            
-            st = client.export_storage.s3.create(
-                project=project_id,
-                bucket=bucket,
-                prefix=prefix,
-                aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
-                aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-                region_name="us-east-1",
-                s3endpoint=os.environ.get("S3_ENDPOINT_URL", None),
-                title=title,
-                can_delete_objects=False,
-            )
-            print(f"✓ Created S3 export storage: s3://{bucket}/{prefix}")
-        
-        # Local export
-        else:
-            local_path = os.path.join(cfg.dataset_dir, "annotations")
-            os.makedirs(local_path, exist_ok=True)
-            
-            for st in client.export_storage.local.list(project=project_id):
-                if st.title == title:
-                    print("✓ Reusing existing local export storage")
-                    return st
-            
-            st = client.export_storage.local.create(
-                project=project_id,
-                path=local_path,
-                title=title,
-                use_blob_urls=False,
-            )
-            print(f"✓ Created local export storage: {local_path}")
-        
-        return st
+    return st
 
 
 def main():
@@ -502,14 +394,10 @@ def main():
     print("🏷️  Label Studio Task Creator")
     print("=" * 60)
     print()
-    print(f"Mode: {cfg.mode.upper()}")
-    print()
     
     # Validate configuration
-    if cfg.mode == "lerobot" and not cfg.dataset_dir:
-        raise ValueError("dataset_dir is required for lerobot mode")
-    if cfg.mode == "packds" and not cfg.frame_server_url:
-        raise ValueError("frame_server_url is required for packds mode")
+    if not cfg.dataset_dir:
+        raise ValueError("dataset_dir is required")
     if not cfg.api_key:
         raise ValueError("api_key is required")
     
@@ -527,8 +415,7 @@ def main():
         print("📝 Creating new project...")
         label_config = create_label_config(cfg.fps)
         
-        project_name = (cfg.project_name or
-                        f"{cfg.mode.title()} Annotation Project")
+        project_name = cfg.project_name or "Video Annotation Project"
         project = client.projects.create(
             title=project_name,
             label_config=label_config
@@ -541,11 +428,8 @@ def main():
     
     print()
     
-    # Import tasks based on mode
-    if cfg.mode == "lerobot":
-        task_count = import_lerobot_tasks(cfg, client, project)
-    else:  # packds
-        task_count = import_packds_tasks(cfg, client, project)
+    # Import tasks
+    task_count = import_lerobot_tasks(cfg, client, project)
     
     # Setup export storage
     try:
@@ -561,14 +445,6 @@ def main():
     print("🌐 Access your project:")
     print(f"   {cfg.base_url}projects/{project.id}/")
     print()
-    
-    if cfg.mode == "packds":
-        print("💡 Important:")
-        print(f"   - Keep the frame server running: {cfg.frame_server_url}")
-        print("   - Videos are generated on-demand from frames")
-        print("   - First load may take time (video generation)")
-        print()
-
     print("📊 Statistics:")
     print(f"   - Total tasks: {task_count}")
     print()

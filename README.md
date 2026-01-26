@@ -263,7 +263,7 @@ If you need development, install yarn and follow web/README.md to complie fronte
 
 
 ```bash
-LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/home/gear/Videos/lerobot_storage CSRF_TRUSTED_ORIGINS="https://localhost:8010" USE_X_FORWARDED_HOST=trueUSE_X_FORWARDED_PORT=trueSECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https  python label_studio/manage.py runserver
+LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/home/gear/Videos/lerobot_storage CSRF_TRUSTED_ORIGINS="http://localhost:8010, http://0.0.0.0:8111" USE_X_FORWARDED_HOST=trueUSE_X_FORWARDED_PORT=trueSECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https  python label_studio/manage.py runserver 0.0.0.0:8111
 ```
 
 If you want to use file path instead of randomly generated path in /data/upload, check docs/source/guide/storage.md

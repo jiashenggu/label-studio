@@ -87,7 +87,18 @@ def create_label_config(fps: float) -> str:
             border-radius: 5px;
             font-family: monospace;
         }}
+        
+        .hidden {{
+            display: none !important;
+        }}
     </Style>
+    
+    <!-- Hidden Image tags for Data Manager thumbnails -->
+    <View className="hidden">
+        <Image name="thumb_ego" value="$ego_view_thumb"/>
+        <Image name="thumb_left" value="$left_wrist_view_thumb"/>
+        <Image name="thumb_right" value="$right_wrist_view_thumb"/>
+    </View>
     
     <View className="meta-info">
         <Text name="meta" value="Episode: $episode_idx | Task: $task_text"/>
@@ -451,6 +462,7 @@ def create_tasks_for_all_episodes(
     tasks = []
     for ep_info in episodes:
         ep_idx = ep_info["episode_idx"]
+        first_step = ep_info["min_step"]
 
         task_data = {
             "episode_idx": ep_idx,
@@ -464,6 +476,9 @@ def create_tasks_for_all_episodes(
                 for step in range(ep_info["min_step"], ep_info["max_step"] + 1)
             ]
             task_data[view_name] = frame_urls
+
+            # Add thumbnail URL (first frame) for data manager preview
+            task_data[f"{view_name}_thumb"] = f"{frame_server_url}/frame/{ep_idx}/{first_step}/{view_name}"
 
         tasks.append(task_data)
 

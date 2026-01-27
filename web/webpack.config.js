@@ -286,6 +286,20 @@ module.exports = composePlugins(
             devMiddleware: {
               publicPath: `${FRONTEND_HOSTNAME}/react-app/`,
             },
+            // Configure client overlay to ignore ResizeObserver errors
+            client: {
+              overlay: {
+                errors: true,
+                warnings: false,
+                runtimeErrors: (error) => {
+                  // Ignore ResizeObserver loop errors - benign browser issue
+                  if (error?.message?.includes?.("ResizeObserver loop")) {
+                    return false;
+                  }
+                  return true;
+                },
+              },
+            },
             allowedHosts: "all", // Allow access from Django's server
             proxy: [
               {

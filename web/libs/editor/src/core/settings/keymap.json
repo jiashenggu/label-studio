@@ -147,11 +147,11 @@
     "description": "Play/pause"
   },
   "media:step-backward": {
-    "key": "alt+left",
+    "key": "left",
     "description": "Go one step back"
   },
   "media:step-forward": {
-    "key": "alt+right",
+    "key": "right",
     "description": "Go one step forward"
   },
   "video:keyframe-backward": {
@@ -189,6 +189,10 @@
   "video:hop-forward": {
     "key": "shift+alt+right",
     "description": "Hop Forward"
+  },
+  "video:keypoint-toggle": {
+    "key": "enter",
+    "description": "Toggle keyframe at current position"
   },
   "repeater:next-page": {
     "key": "alt+right",

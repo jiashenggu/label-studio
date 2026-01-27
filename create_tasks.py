@@ -7,8 +7,9 @@ Import video files from local or S3 storage (LeRobot format).
 from label_studio_sdk import LabelStudio
 import tyro
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 import os
+import json
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 import re
@@ -17,25 +18,25 @@ import re
 @dataclass
 class Config:
     """Configuration for creating Label Studio tasks."""
-    
+
     api_key: str = None
     """Label Studio API token. Create one in Account & Settings → Access Tokens."""
-    
+
     base_url: str = "http://localhost:8080/"
     """Label Studio URL."""
-    
+
     project_id: int = -1
     """Existing project ID, or -1 to create new."""
-    
+
     project_name: Optional[str] = None
     """Project name (for new projects)."""
-    
+
     dataset_dir: Optional[str] = None
     """Root directory with videos (local path or s3://bucket/prefix)."""
-    
+
     storage_name: Optional[str] = None
     """Name for storage connection."""
-    
+
     fps: float = 15.0
     """Frame rate for video playback."""
 
@@ -145,6 +146,60 @@ def create_label_config(fps: float = 15.0) -> str:
 """
 
 
+def load_episodes_metadata(dataset_dir: str) -> Dict[int, Dict[str, Any]]:
+    """
+    Load episode metadata from meta/episodes.jsonl file.
+
+    Args:
+        dataset_dir: Root directory of LeRobot dataset (local path or s3://)
+
+    Returns:
+        Dictionary mapping episode_index to episode metadata (including trajectory_id)
+    """
+    episodes_map = {}
+
+    if dataset_dir.startswith("s3://"):
+        # S3: download and parse episodes.jsonl
+        bucket, prefix = dataset_dir.replace("s3://", "").split("/", 1)
+        prefix = prefix.rstrip("/")
+        episodes_key = f"{prefix}/meta/episodes.jsonl"
+
+        try:
+            s3 = boto3.client("s3")
+            response = s3.get_object(Bucket=bucket, Key=episodes_key)
+            content = response["Body"].read().decode("utf-8")
+
+            for line in content.strip().split("\n"):
+                if line.strip():
+                    episode = json.loads(line)
+                    ep_idx = episode.get("episode_index", 0)
+                    episodes_map[ep_idx] = episode
+
+            print(f"✓ Loaded {len(episodes_map)} episodes from s3://{bucket}/{episodes_key}")
+        except Exception as e:
+            print(f"⚠️  Could not load episodes.jsonl from S3: {e}")
+    else:
+        # Local: read episodes.jsonl directly
+        episodes_path = os.path.join(dataset_dir, "meta", "episodes.jsonl")
+
+        if os.path.exists(episodes_path):
+            try:
+                with open(episodes_path, "r") as f:
+                    for line in f:
+                        if line.strip():
+                            episode = json.loads(line)
+                            ep_idx = episode.get("episode_index", 0)
+                            episodes_map[ep_idx] = episode
+
+                print(f"✓ Loaded {len(episodes_map)} episodes from {episodes_path}")
+            except Exception as e:
+                print(f"⚠️  Could not load episodes.jsonl: {e}")
+        else:
+            print(f"⚠️  episodes.jsonl not found at {episodes_path}")
+
+    return episodes_map
+
+
 def name2key(view_name: str, view_dirname: str) -> str:
     """Map view directory name to canonical view key."""
     if ("ego" in view_name or "top" in view_name or "head" in view_name) and "right" not in view_name:
@@ -162,7 +217,7 @@ def name2key(view_name: str, view_dirname: str) -> str:
 def build_s3_tasks_map(bucket: str, prefix: str = "") -> dict:
     """
     Traverse s3://bucket/prefix/*.mp4 files and build tasks map.
-    
+
     Returns:
         {
             "chunk/filename.mp4": {
@@ -186,7 +241,7 @@ def build_s3_tasks_map(bucket: str, prefix: str = "") -> dict:
             if not key.lower().endswith(".mp4"):
                 continue
 
-            rel_key = key[len(prefix):].lstrip("/")
+            rel_key = key[len(prefix) :].lstrip("/")
             parts = rel_key.split("/")
             if len(parts) < 2:
                 continue
@@ -211,27 +266,27 @@ def build_s3_tasks_map(bucket: str, prefix: str = "") -> dict:
 
 def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
     """Import tasks from video files (local or S3) - LeRobot dataset format."""
-    
+
     print("=" * 60)
     print("🤖 LEROBOT MODE: Importing video files")
     print("=" * 60)
     print()
-    
+
     if not cfg.dataset_dir:
         raise ValueError("dataset_dir is required for lerobot mode")
-    
+
     tasks_map = {}
-    
+
     if cfg.storage_name is None:
         title = f"Import Storage {cfg.dataset_dir}"
     else:
         title = f"Import Storage {cfg.storage_name}"
-    
+
     # S3 storage
     if cfg.dataset_dir.startswith("s3://"):
         bucket, prefix = cfg.dataset_dir.replace("s3://", "").split("/", 1)
         prefix = prefix.rstrip("/") + "/videos/"
-        
+
         # Check for existing storage
         for st in client.import_storage.s3.list(project=project.id):
             if st.title == title:
@@ -256,11 +311,11 @@ def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
             )
             tasks_map = build_s3_tasks_map(bucket=bucket, prefix=prefix)
             print(f"✓ Created S3 import storage: {title} -> s3://{bucket}/{prefix}")
-    
+
     # Local storage
     else:
         local_path = os.path.join(cfg.dataset_dir, "videos")
-        
+
         # Check for existing storage
         for st in client.import_storage.local.list(project=project.id):
             if st.title == title:
@@ -276,83 +331,95 @@ def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
                 use_blob_urls=True,
             )
             print(f"✓ Created local import storage: {title} -> {local_path}")
-        
+
         # Build tasks map
         for root, _, files in os.walk(local_path):
             for video_filename in files:
                 if not video_filename.endswith(".mp4"):
                     continue
-                
+
                 video_path = os.path.join(root, video_filename)
                 view_dirname = os.path.basename(root)
                 view_name = view_dirname.split(".")[-1]
                 view_key = name2key(view_name, view_dirname)
-                
+
                 rel = os.path.relpath(video_path, local_path)
                 parts = rel.split(os.sep)
                 chunk = parts[0] if parts else ""
                 group_key = f"{chunk}/{video_filename}"
-                
+
                 abs_path = os.path.abspath(video_path)
-                rel_path = abs_path.lstrip('/home/gear/Videos/lerobot_storage/')
-                tasks_map.setdefault(group_key, {})[view_key] = (
-                    f"/data/local-files/?d={rel_path}"
-                )
-    
+                rel_path = abs_path.lstrip("/home/gear/Videos/lerobot_storage/")
+                tasks_map.setdefault(group_key, {})[view_key] = f"/data/local-files/?d={rel_path}"
+
+    # Load episode metadata from meta/episodes.jsonl
+    episodes_metadata = load_episodes_metadata(cfg.dataset_dir)
+
     # Import tasks and add metadata
     tasks_json = []
     for idx, (group_key, task_data) in enumerate(tasks_map.items()):
         # Extract episode number from group_key or filename
-        episode_match = re.search(r'episode[_-](\d+)', group_key, re.IGNORECASE)
+        episode_match = re.search(r"episode[_-](\d+)", group_key, re.IGNORECASE)
         if episode_match:
             episode_idx = int(episode_match.group(1))
         else:
             episode_idx = idx
-        
+
         # Add metadata fields required by label config
-        task_data['episode_idx'] = episode_idx
-        task_data['task_text'] = group_key.split('/')[0] if '/' in group_key else 'N/A'
-        
+        task_data["episode_idx"] = episode_idx
+        task_data["task_text"] = group_key.split("/")[0] if "/" in group_key else "N/A"
+
+        # Add trajectory_id from episodes.jsonl metadata
+        if episode_idx in episodes_metadata:
+            ep_meta = episodes_metadata[episode_idx]
+            if "trajectory_id" in ep_meta:
+                task_data["trajectory_id"] = ep_meta["trajectory_id"]
+            # Optionally include other metadata from episodes.jsonl
+            if "tasks" in ep_meta and ep_meta["tasks"]:
+                task_data["task_text"] = (
+                    ep_meta["tasks"][0] if isinstance(ep_meta["tasks"], list) else ep_meta["tasks"]
+                )
+
         tasks_json.append(task_data)
-    
+
     print()
     print(f"📥 Importing {len(tasks_json)} tasks...")
-    
+
     result = client.projects.import_tasks(
         request=tasks_json,
         id=project.id,
         return_task_ids=True,
     )
-    
+
     print(f"✓ Successfully imported {result.task_count} tasks")
     return result.task_count
 
 
 def ensure_export_storage(cfg: Config, client: LabelStudio, project_id: int):
     """Create or reuse export storage connection."""
-    
+
     print()
     print("💾 Setting up export storage...")
-    
+
     if not cfg.dataset_dir:
         print("⚠️  No dataset_dir specified, skipping export storage")
         return None
-    
+
     if cfg.storage_name is None:
         title = f"Export Storage {cfg.dataset_dir}"
     else:
         title = f"Export Storage {cfg.storage_name}"
-    
+
     # S3 export
     if cfg.dataset_dir.startswith("s3://"):
         bucket, prefix = cfg.dataset_dir.replace("s3://", "").split("/", 1)
         prefix = prefix.rstrip("/") + "/annotations"
-        
+
         for st in client.export_storage.s3.list(project=project_id):
             if st.title == title:
                 print("✓ Reusing existing S3 export storage")
                 return st
-        
+
         st = client.export_storage.s3.create(
             project=project_id,
             bucket=bucket,
@@ -365,17 +432,17 @@ def ensure_export_storage(cfg: Config, client: LabelStudio, project_id: int):
             can_delete_objects=False,
         )
         print(f"✓ Created S3 export storage: s3://{bucket}/{prefix}")
-    
+
     # Local export
     else:
         local_path = os.path.join(cfg.dataset_dir, "annotations")
         os.makedirs(local_path, exist_ok=True)
-        
+
         for st in client.export_storage.local.list(project=project_id):
             if st.title == title:
                 print("✓ Reusing existing local export storage")
                 return st
-        
+
         st = client.export_storage.local.create(
             project=project_id,
             path=local_path,
@@ -383,60 +450,57 @@ def ensure_export_storage(cfg: Config, client: LabelStudio, project_id: int):
             use_blob_urls=False,
         )
         print(f"✓ Created local export storage: {local_path}")
-    
+
     return st
 
 
 def main():
     cfg = tyro.cli(Config)
-    
+
     print("=" * 60)
     print("🏷️  Label Studio Task Creator")
     print("=" * 60)
     print()
-    
+
     # Validate configuration
     if not cfg.dataset_dir:
         raise ValueError("dataset_dir is required")
     if not cfg.api_key:
         raise ValueError("api_key is required")
-    
+
     # Connect to Label Studio
     print(f"📡 Connecting to Label Studio: {cfg.base_url}")
     client = LabelStudio(base_url=cfg.base_url, api_key=cfg.api_key)
-    
+
     user_info = client.users.whoami()
-    email = user_info.email if hasattr(user_info, 'email') else 'User'
+    email = user_info.email if hasattr(user_info, "email") else "User"
     print(f"✓ Authenticated as: {email}")
     print()
-    
+
     # Create or get project
     if cfg.project_id == -1:
         print("📝 Creating new project...")
         label_config = create_label_config(cfg.fps)
-        
+
         project_name = cfg.project_name or "Video Annotation Project"
-        project = client.projects.create(
-            title=project_name,
-            label_config=label_config
-        )
+        project = client.projects.create(title=project_name, label_config=label_config)
         print(f"✓ Created project: {project.title} (ID: {project.id})")
     else:
         print(f"📂 Using existing project {cfg.project_id}...")
         project = client.projects.get(id=cfg.project_id)
         print(f"✓ Project: {project.title}")
-    
+
     print()
-    
+
     # Import tasks
     task_count = import_lerobot_tasks(cfg, client, project)
-    
+
     # Setup export storage
     try:
         ensure_export_storage(cfg, client, project.id)
     except Exception as e:
         print(f"⚠️  Could not setup export storage: {e}")
-    
+
     print()
     print("=" * 60)
     print("✅ All done!")

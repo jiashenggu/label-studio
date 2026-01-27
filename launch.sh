@@ -213,7 +213,6 @@ if [ "$MODE" = "lerobot" ]; then
     echo ""
     
     python create_tasks.py \
-        --mode lerobot \
         --dataset_dir "$DATASET_DIR" \
         --api_key "$API_KEY" \
         --base_url "http://localhost:${LABEL_STUDIO_PORT}"

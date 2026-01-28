@@ -32,6 +32,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
 
   // Refs
   const canvasRef = useRef(null);
+  const scrollPositionRef = useRef(0);
 
   // Video info
   const duration = videoObject?.ref?.current?.duration || 60;
@@ -119,6 +120,35 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     const fitted = fitCurve(sorted, validDuration, validFps, fitMethod);
     setDenseRewards(fitted);
   }, [controlPoints, validDuration, validFps, fitMethod, autoFit]);
+
+  // Prevent scroll when modal is open
+  useEffect(() => {
+    if (isEditModalOpen) {
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+      // Prevent body scroll
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollPositionRef.current}px`;
+      document.body.style.width = '100%';
+    } else {
+      // Restore body scroll
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      // Restore scroll position
+      window.scrollTo(0, scrollPositionRef.current);
+    }
+
+    return () => {
+      // Cleanup on unmount
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+    };
+  }, [isEditModalOpen]);
 
   // Draw canvas
   useEffect(() => {

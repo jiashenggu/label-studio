@@ -40,6 +40,7 @@ const RewardAnnotationModal = observer(({ item, videoObject, numStages, stageNam
   // Refs
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
+  const scrollPositionRef = useRef(0);
 
   // Video info
   const duration = videoObject?.ref?.current?.duration || 60;
@@ -335,6 +336,35 @@ const RewardAnnotationModal = observer(({ item, videoObject, numStages, stageNam
   useEffect(() => {
     drawCanvas();
   }, [drawCanvas]);
+
+  // Prevent scroll when edit modal or rubric panel is open
+  useEffect(() => {
+    if (isEditModalOpen || showRubricPanel) {
+      // Save current scroll position
+      scrollPositionRef.current = window.scrollY;
+      // Prevent body scroll
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollPositionRef.current}px`;
+      document.body.style.width = '100%';
+    } else {
+      // Restore body scroll
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      // Restore scroll position
+      window.scrollTo(0, scrollPositionRef.current);
+    }
+
+    return () => {
+      // Cleanup on unmount
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+    };
+  }, [isEditModalOpen, showRubricPanel]);
 
   // Find point at position
   const findPointAt = useCallback(

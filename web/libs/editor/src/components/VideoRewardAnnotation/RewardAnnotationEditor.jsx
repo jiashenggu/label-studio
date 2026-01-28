@@ -215,16 +215,50 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       const x = timeToX(pt.time);
       const y = rewardToY(pt.reward);
 
-      // Point
-      ctx.fillStyle = idx === selectedPointIndex ? "#fbbf24" : "#e94560";
-      ctx.beginPath();
-      ctx.arc(x, y, 6, 0, Math.PI * 2);
-      ctx.fill();
+      if (pt.type === "step") {
+        // Draw lightning bolt for step transitions
+        ctx.save();
+        ctx.translate(x, y);
+        
+        // Background circle
+        ctx.fillStyle = idx === selectedPointIndex ? "#fbbf24" : "#fbbf24";
+        ctx.beginPath();
+        ctx.arc(0, 0, 10, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // White border
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Draw lightning bolt icon
+        ctx.strokeStyle = "#1a1a2e";
+        ctx.fillStyle = "#1a1a2e";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        // Lightning bolt path (scaled down)
+        ctx.moveTo(1, -5);
+        ctx.lineTo(-2, 0);
+        ctx.lineTo(1, 0);
+        ctx.lineTo(-1, 5);
+        ctx.lineTo(2, 0);
+        ctx.lineTo(-1, 0);
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.restore();
+      } else {
+        // Normal point - circle
+        ctx.fillStyle = idx === selectedPointIndex ? "#4ade80" : "#e94560";
+        ctx.beginPath();
+        ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.fill();
 
-      // Border
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 2;
-      ctx.stroke();
+        // Border
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     });
 
     // Draw current time indicator
@@ -375,7 +409,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
             style={{ width: "100%", height: "400px", cursor: "crosshair" }}
           />
           <div className="reward-editor__legend">
-            <span>Click to add points • Click point to select • Delete key to remove</span>
+            <span>🔴 Click to add points • ⚡ Yellow = Step transition • 🟢 Green = Selected • Delete key to remove</span>
           </div>
         </div>
 
@@ -384,12 +418,17 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
             <button type="button" onClick={saveAnnotation} className="reward-editor__btn reward-editor__btn--primary">
               Save Annotation
             </button>
+          </div>
+          
+          <div className="reward-editor__toolbar">
             <button type="button" onClick={deleteSelectedPoint} disabled={selectedPointIndex < 0} className="reward-editor__btn">
               Delete Point
             </button>
+            <span className="reward-editor__separator">•</span>
             <button type="button" onClick={clearAll} className="reward-editor__btn reward-editor__btn--danger">
               Clear All
             </button>
+            <span className="reward-editor__separator">•</span>
             <button type="button" onClick={() => setShowRubric(!showRubric)} className="reward-editor__btn">
               {showRubric ? "Hide" : "Show"} Rubric
             </button>
@@ -490,20 +529,24 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
               <button type="button" onClick={applyEdit} className="reward-editor__btn reward-editor__btn--primary">
                 {editingPoint.index >= 0 ? "Update" : "Add"} Point
               </button>
+              <span className="reward-editor__separator">•</span>
               <button type="button" onClick={cancelEdit} className="reward-editor__btn">
                 Cancel
               </button>
               {editingPoint.index >= 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    deleteSelectedPoint();
-                    cancelEdit();
-                  }}
-                  className="reward-editor__btn reward-editor__btn--danger"
-                >
-                  Delete Point
-                </button>
+                <>
+                  <span className="reward-editor__separator">•</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      deleteSelectedPoint();
+                      cancelEdit();
+                    }}
+                    className="reward-editor__btn reward-editor__btn--danger"
+                  >
+                    Delete Point
+                  </button>
+                </>
               )}
             </div>
           </div>

@@ -377,7 +377,13 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   };
 
   // Apply edit from modal - directly update region
-  const applyEdit = () => {
+  const applyEdit = (e) => {
+    // Prevent event bubbling that might interfere with modal closing
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
     if (!editingPoint || !region) return;
 
     if (editingPoint.index >= 0) {
@@ -400,6 +406,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       setSelectedPointIndex(controlPoints.length);
     }
 
+    // Close modal immediately
     setIsEditModalOpen(false);
     setEditingPoint(null);
   };

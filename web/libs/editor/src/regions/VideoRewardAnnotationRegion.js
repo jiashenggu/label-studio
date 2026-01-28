@@ -179,6 +179,8 @@ const Model = types
       self.controlPoints = points;
       // Clear dense rewards since curve needs refitting
       self.denseRewards = [];
+      // Notify annotation that changes were made
+      self.notifyDrawingFinished?.();
     },
 
     /**
@@ -193,6 +195,8 @@ const Model = types
       points.sort((a, b) => a.time - b.time);
       self.controlPoints = points;
       self.denseRewards = [];
+      // Notify annotation that changes were made
+      self.notifyDrawingFinished?.();
     },
 
     /**
@@ -205,6 +209,8 @@ const Model = types
       points.splice(index, 1);
       self.controlPoints = points;
       self.denseRewards = [];
+      // Notify annotation that changes were made
+      self.notifyDrawingFinished?.();
     },
 
     /**
@@ -215,6 +221,8 @@ const Model = types
       const sortedPoints = [...points].sort((a, b) => a.time - b.time);
       self.controlPoints = sortedPoints;
       self.denseRewards = [];
+      // Notify annotation that changes were made
+      self.notifyDrawingFinished?.();
     },
 
     /**
@@ -239,6 +247,8 @@ const Model = types
     clearAnnotation() {
       self.controlPoints = [];
       self.denseRewards = [];
+      // Notify annotation that changes were made
+      self.notifyDrawingFinished?.();
     },
 
     /**

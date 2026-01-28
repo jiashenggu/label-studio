@@ -37,7 +37,7 @@ class Config:
     storage_name: Optional[str] = None
     """Name for storage connection."""
 
-    fps: float = 15.0
+    fps: float = 30.0
     """Frame rate for video playback."""
 
 

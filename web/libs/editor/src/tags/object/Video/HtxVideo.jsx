@@ -570,6 +570,7 @@ const HtxVideoView = ({ item, store }) => {
             height={item.timelineheight}
             altHopSize={store.settings.videoHopSize}
             allowFullscreen={false}
+            allowSeek={false}
             fullscreen={isFullScreen}
             defaultStepSize={5}
             disableView={!supportsTimelineRegions && !supportsRegions}

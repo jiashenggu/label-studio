@@ -33,7 +33,8 @@ export const Seeker: FC<SeekerProps> = ({
   const seekerRef = useRef<HTMLDivElement>();
   const viewRef = useRef<HTMLDivElement>();
 
-  const showIndicator = seekVisible > 0;
+  // Hide indicator if the entire timeline is visible (seekVisible >= length)
+  const showIndicator = seekVisible > 0 && seekVisible < length;
 
   // The indicator width is set wider by 1.5, to account for the pixel sizing of the position indicator width and placement
   // to align better with the viewable timeline scroll.

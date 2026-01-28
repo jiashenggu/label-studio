@@ -206,7 +206,8 @@ export const Frames: FC<TimelineViewProps> = ({
   }, [hoverOffset, currentOffsetX, step, setIndicatorOffset]);
 
   const seekerOffset = useMemo(() => {
-    const pixelOffset = clamp(position, 0, length) * step;
+    // Position is 1-based, convert to 0-based for pixel calculation
+    const pixelOffset = clamp(position - 1, 0, length - 1) * step;
     const value = roundToStep(pixelOffset - currentOffsetX, step);
 
     return value + timelineStartOffset;
@@ -412,7 +413,7 @@ export const Frames: FC<TimelineViewProps> = ({
         <Elem
           name="indicator"
           onMouseDown={handleMovement}
-          style={{ left: clamp(seekerOffset - step, timelineStartOffset - step, viewWidth) }}
+          style={{ left: clamp(seekerOffset, timelineStartOffset, viewWidth + timelineStartOffset) }}
         />
 
         {isDefined(hoverOffset) && hoverEnabled && (

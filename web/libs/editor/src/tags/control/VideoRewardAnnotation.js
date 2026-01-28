@@ -54,12 +54,13 @@ const Model = types
       return self.stagenames.split(",").map((s) => s.trim());
     },
     get rubricData() {
-      if (!self.rubric) return [];
+      if (!self.rubric) return null;
+      // First try to parse as JSON for backward compatibility
       try {
         return JSON.parse(self.rubric);
       } catch (e) {
-        console.error("Failed to parse rubric JSON:", e);
-        return [];
+        // If JSON parse fails, return as plain string
+        return self.rubric;
       }
     },
     get videoObject() {

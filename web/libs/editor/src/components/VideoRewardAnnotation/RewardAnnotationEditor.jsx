@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { observer } from "mobx-react";
 import { fitCurve, clamp } from "./curveFitting";
 import "./RewardAnnotationEditor.scss";
@@ -25,7 +26,6 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   const [selectedPointIndex, setSelectedPointIndex] = useState(-1);
   const [fitMethod, setFitMethod] = useState("pchip");
   const [currentTime, setCurrentTime] = useState(0);
-  const [showRubric, setShowRubric] = useState(false);
   const [autoFit, setAutoFit] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPoint, setEditingPoint] = useState(null);
@@ -419,92 +419,162 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   };
 
   return (
-    <div className="reward-editor">
-      <div className="reward-editor__header">
-        <h3>Reward Curve Annotation</h3>
-        <div className="reward-editor__info">
-          <span>Duration: {validDuration.toFixed(1)}s</span>
-          <span>|</span>
-          <span>Stages: {numStages}</span>
-          <span>|</span>
-          <span>Current: {currentTime.toFixed(2)}s</span>
-        </div>
-      </div>
-
-      <div className="reward-editor__content">
-        <div className="reward-editor__canvas-section">
-          <canvas
-            ref={canvasRef}
-            onClick={handleCanvasClick}
-            style={{ width: "100%", height: "400px", cursor: "crosshair" }}
-          />
-          <div className="reward-editor__legend">
-            <span>🔴 Click to add points • ⚡ Yellow = Step transition • 🟢 Green = Selected • Delete key to remove</span>
+    <>
+      <div className="reward-editor">
+        <div className="reward-editor__header">
+          <h3>Reward Curve Annotation</h3>
+          <div className="reward-editor__info">
+            <span>Duration: {validDuration.toFixed(1)}s</span>
+            <span>|</span>
+            <span>Stages: {numStages}</span>
+            <span>|</span>
+            <span>Current: {currentTime.toFixed(2)}s</span>
           </div>
         </div>
 
-        <div className="reward-editor__controls">
-          <div className="reward-editor__toolbar">
-            <button type="button" onClick={saveAnnotation} className="reward-editor__btn reward-editor__btn--primary">
-              Save Annotation
-            </button>
-          </div>
-          
-          <div className="reward-editor__toolbar">
-            <button type="button" onClick={deleteSelectedPoint} disabled={selectedPointIndex < 0} className="reward-editor__btn">
-              Delete Point
-            </button>
-            <span className="reward-editor__separator">•</span>
-            <button type="button" onClick={clearAll} className="reward-editor__btn reward-editor__btn--danger">
-              Clear All
-            </button>
-            <span className="reward-editor__separator">•</span>
-            <button type="button" onClick={() => setShowRubric(!showRubric)} className="reward-editor__btn">
-              {showRubric ? "Hide" : "Show"} Rubric
-            </button>
-          </div>
-
-          <div className="reward-editor__settings">
-            <label>
-              Fit Method:
-              <select value={fitMethod} onChange={(e) => setFitMethod(e.target.value)} className="reward-editor__select">
-                <option value="pchip">PCHIP</option>
-                <option value="linear">Linear</option>
-              </select>
-            </label>
-            <label>
-              <input type="checkbox" checked={autoFit} onChange={(e) => setAutoFit(e.target.checked)} />
-              Auto-fit curve
-            </label>
-          </div>
-
-          {showRubric && rubric && rubric.length > 0 && (
-            <div className="reward-editor__rubric">
-              <h4>Rubric</h4>
-              {rubric.map((stage, idx) => (
-                <div key={idx} className="reward-editor__rubric-stage">
-                  <strong>{stage.title || `Stage ${stage.stage}`}</strong>
-                  {stage.criteria?.map((c, i) => (
-                    <div key={i} className="reward-editor__rubric-item">
-                      <span className="score">{c.score.toFixed(2)}</span>
-                      <span>{c.description}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
+        <div className="reward-editor__content">
+          <div className="reward-editor__canvas-section">
+            <canvas
+              ref={canvasRef}
+              onClick={handleCanvasClick}
+              style={{ width: "100%", height: "400px", cursor: "crosshair" }}
+            />
+            <div className="reward-editor__legend">
+              <span>🔴 Click to add points • ⚡ Yellow = Step transition • 🟢 Green = Selected • Delete key to remove</span>
             </div>
-          )}
+          </div>
+
+          <div className="reward-editor__controls">
+            <div className="reward-editor__toolbar">
+              <button type="button" onClick={saveAnnotation} className="reward-editor__btn reward-editor__btn--primary">
+                Save Annotation
+              </button>
+            </div>
+            
+            <div className="reward-editor__toolbar">
+              <button 
+                type="button" 
+                onClick={deleteSelectedPoint} 
+                disabled={selectedPointIndex < 0} 
+                className="reward-editor__btn"
+                style={{
+                  padding: '14px 32px',
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  minWidth: '160px',
+                  background: selectedPointIndex < 0 ? '#2d3748' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  border: `2px solid ${selectedPointIndex < 0 ? '#4a5568' : '#d97706'}`,
+                  color: 'white',
+                  cursor: selectedPointIndex < 0 ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: selectedPointIndex < 0 ? 'none' : '0 4px 12px rgba(245, 158, 11, 0.3)',
+                  opacity: selectedPointIndex < 0 ? 0.5 : 1
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedPointIndex >= 0) {
+                    e.target.style.transform = 'translateY(-2px)';
+                    e.target.style.boxShadow = '0 6px 20px rgba(245, 158, 11, 0.4)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedPointIndex >= 0) {
+                    e.target.style.transform = 'translateY(0)';
+                    e.target.style.boxShadow = '0 4px 12px rgba(245, 158, 11, 0.3)';
+                  }
+                }}
+              >
+                Delete Point
+              </button>
+              <span className="reward-editor__separator" style={{ margin: '0 15px', fontSize: '1.5rem', color: '#666' }}>•</span>
+              <button 
+                type="button" 
+                onClick={clearAll} 
+                className="reward-editor__btn reward-editor__btn--danger"
+                style={{
+                  padding: '14px 32px',
+                  fontSize: '1.05rem',
+                  fontWeight: 600,
+                  minWidth: '140px',
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  border: '2px solid #dc2626',
+                  color: 'white',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = '0 6px 20px rgba(239, 68, 68, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.3)';
+                }}
+              >
+                Clear All
+              </button>
+            </div>
+
+            <div className="reward-editor__settings">
+              <label>
+                Fit Method:
+                <select value={fitMethod} onChange={(e) => setFitMethod(e.target.value)} className="reward-editor__select">
+                  <option value="pchip">PCHIP</option>
+                  <option value="linear">Linear</option>
+                </select>
+              </label>
+              <label>
+                <input type="checkbox" checked={autoFit} onChange={(e) => setAutoFit(e.target.checked)} />
+                Auto-fit curve
+              </label>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Edit Point Modal */}
-      {isEditModalOpen && editingPoint && (
-        <div className="reward-editor__edit-overlay" onClick={cancelEdit}>
-          <div className="reward-editor__edit-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{editingPoint.index >= 0 ? "Edit Control Point" : "Add Control Point"}</h3>
+      {/* Edit Point Modal - Rendered as Portal */}
+      {isEditModalOpen && editingPoint && createPortal(
+        <div 
+          className="reward-editor__edit-overlay" 
+          onClick={cancelEdit}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            zIndex: 99999,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            overflow: 'hidden'
+          }}
+        >
+          <div 
+            className="reward-editor__edit-modal" 
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#16213e',
+              borderRadius: '12px',
+              padding: '30px',
+              minWidth: '450px',
+              maxWidth: '600px',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              border: '1px solid #0f3460',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.5)',
+              color: '#eaeaea'
+            }}
+          >
+            <h3 style={{ margin: '0 0 25px 0', fontSize: '1.3rem', color: '#eaeaea' }}>
+              {editingPoint.index >= 0 ? "Edit Control Point" : "Add Control Point"}
+            </h3>
             
             <div className="reward-editor__form-group">
-              <label>Time (seconds)</label>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#a0a0a0', fontSize: '0.95rem', fontWeight: 500 }}>
+                Time (seconds)
+              </label>
               <input
                 type="number"
                 min="0"
@@ -512,11 +582,23 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
                 step="0.1"
                 value={editingPoint.time}
                 onChange={(e) => setEditingPoint({ ...editingPoint, time: Number.parseFloat(e.target.value) || 0 })}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: '#1a1a2e',
+                  border: '1px solid #0f3460',
+                  borderRadius: '6px',
+                  color: '#ffffff',
+                  fontSize: '1.1rem',
+                  fontWeight: 500
+                }}
               />
             </div>
 
             <div className="reward-editor__form-group">
-              <label>Reward Score</label>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#a0a0a0', fontSize: '0.95rem', fontWeight: 500 }}>
+                Reward Score
+              </label>
               <input
                 type="number"
                 min="0"
@@ -524,6 +606,17 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
                 step="0.01"
                 value={editingPoint.reward}
                 onChange={(e) => setEditingPoint({ ...editingPoint, reward: Number.parseFloat(e.target.value) || 0 })}
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  background: '#1a1a2e',
+                  border: '1px solid #0f3460',
+                  borderRadius: '6px',
+                  color: '#ffffff',
+                  fontSize: '1.1rem',
+                  fontWeight: 500
+                }}
               />
             </div>
 
@@ -533,39 +626,96 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
                   type="checkbox"
                   checked={editingPoint.type === "step"}
                   onChange={(e) => setEditingPoint({ ...editingPoint, type: e.target.checked ? "step" : "normal" })}
+                  style={{ marginRight: '10px', width: '18px', height: '18px', cursor: 'pointer', accentColor: '#e94560' }}
                 />
-                Step transition (instant jump)
+                <span style={{ color: '#eaeaea' }}>Step transition (instant jump)</span>
               </label>
             </div>
 
-            {showRubric && rubric && rubric.length > 0 && (
-              <div className="reward-editor__edit-rubric">
-                <h4>Scoring Reference</h4>
-                {rubric.map((stage, idx) => (
-                  <div key={idx} className="reward-editor__rubric-stage">
-                    <strong>{stage.title || `Stage ${stage.stage}`}</strong>
-                    {stage.criteria?.map((c, i) => (
-                      <div key={i} className="reward-editor__rubric-item">
-                        <span className="score">{c.score.toFixed(2)}</span>
-                        <span>{c.description}</span>
-                      </div>
-                    ))}
-                  </div>
-                ))}
+            {rubric && (
+              <div style={{ 
+                marginTop: '20px', 
+                paddingTop: '15px', 
+                borderTop: '1px solid #0f3460',
+                maxHeight: '300px',
+                overflowY: 'auto'
+              }}>
+                <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem', color: '#a0a0a0' }}>Scoring Reference</h4>
+                <div style={{ 
+                  whiteSpace: 'pre-wrap',
+                  fontSize: '0.9rem',
+                  lineHeight: '1.6',
+                  color: '#eaeaea',
+                  fontFamily: 'monospace',
+                  background: '#0a0a15',
+                  padding: '12px',
+                  borderRadius: '6px',
+                  border: '1px solid #0f3460'
+                }}>
+                  {typeof rubric === 'string' ? rubric : JSON.stringify(rubric, null, 2)}
+                </div>
               </div>
             )}
 
             <div className="reward-editor__edit-actions">
-              <button type="button" onClick={applyEdit} className="reward-editor__btn reward-editor__btn--primary">
+              <button 
+                type="button" 
+                onClick={applyEdit} 
+                className="reward-editor__btn reward-editor__btn--primary"
+                style={{
+                  padding: '16px 40px',
+                  fontSize: '1.1rem',
+                  fontWeight: 600,
+                  minWidth: '180px',
+                  background: 'linear-gradient(135deg, #4ade80 0%, #22c55e 100%)',
+                  border: '2px solid #22c55e',
+                  color: 'white',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 4px 12px rgba(74, 222, 128, 0.3)'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = '0 6px 20px rgba(74, 222, 128, 0.4)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = '0 4px 12px rgba(74, 222, 128, 0.3)';
+                }}
+              >
                 {editingPoint.index >= 0 ? "Update" : "Add"} Point
               </button>
-              <span className="reward-editor__separator">•</span>
-              <button type="button" onClick={cancelEdit} className="reward-editor__btn">
+              <span className="reward-editor__separator" style={{ margin: '0 15px', fontSize: '1.5rem', color: '#666' }}>•</span>
+              <button 
+                type="button" 
+                onClick={cancelEdit} 
+                className="reward-editor__btn"
+                style={{
+                  padding: '16px 40px',
+                  fontSize: '1.1rem',
+                  fontWeight: 600,
+                  minWidth: '140px',
+                  background: '#374151',
+                  border: '2px solid #4b5563',
+                  color: 'white',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)'
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.background = '#4b5563';
+                  e.target.style.transform = 'translateY(-2px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.background = '#374151';
+                  e.target.style.transform = 'translateY(0)';
+                }}
+              >
                 Cancel
               </button>
               {editingPoint.index >= 0 && (
                 <>
-                  <span className="reward-editor__separator">•</span>
+                  <span className="reward-editor__separator" style={{ margin: '0 15px', fontSize: '1.5rem', color: '#666' }}>•</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -573,6 +723,26 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
                       cancelEdit();
                     }}
                     className="reward-editor__btn reward-editor__btn--danger"
+                    style={{
+                      padding: '16px 40px',
+                      fontSize: '1.1rem',
+                      fontWeight: 600,
+                      minWidth: '160px',
+                      background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                      border: '2px solid #dc2626',
+                      color: 'white',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.transform = 'translateY(-2px)';
+                      e.target.style.boxShadow = '0 6px 20px rgba(239, 68, 68, 0.4)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.transform = 'translateY(0)';
+                      e.target.style.boxShadow = '0 4px 12px rgba(239, 68, 68, 0.3)';
+                    }}
                   >
                     Delete Point
                   </button>
@@ -580,9 +750,10 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 });
 

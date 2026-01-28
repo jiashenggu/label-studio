@@ -1,3 +1,6 @@
+// Import VideoRewardAnnotation FIRST to ensure it's registered before other tags import Types
+import { VideoRewardAnnotationModel } from "./VideoRewardAnnotation";
+
 import { ChoicesModel } from "./Choices";
 import { DateTimeModel } from "./DateTime";
 import { NumberModel } from "./Number";
@@ -52,6 +55,7 @@ export {
   TimeSeriesLabelsModel,
   TimelineLabelsModel,
   VideoRectangleModel,
+  VideoRewardAnnotationModel,
   BrushLabelsModel,
   BrushModel,
   EllipseLabelsModel,

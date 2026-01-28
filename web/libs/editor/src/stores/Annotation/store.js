@@ -5,6 +5,14 @@ import { DataValidator, ValidationError, VALIDATORS } from "../../core/DataValid
 import { guidGenerator } from "../../core/Helpers";
 import Registry from "../../core/Registry";
 import Tree from "../../core/Tree";
+
+// CRITICAL: Import ALL tags BEFORE Types to ensure Registry is populated
+// These imports must happen before Types.allModelsTypes() is called
+import "../../tags/control";
+import "../../tags/object";
+import "../../tags/visual";
+import "../../tags/Custom";
+
 import Types from "../../core/Types";
 import { StoreExtender } from "../../mixins/SharedChoiceStore/extender";
 import { ViewModel } from "../../tags/visual";

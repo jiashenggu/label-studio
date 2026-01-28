@@ -66,7 +66,7 @@ const SettingsModel = types
 
     enableSmoothing: types.optional(types.boolean, true),
 
-    videoHopSize: types.optional(types.number, 10),
+    videoHopSize: types.optional(types.number, 1),
 
     isDestroying: types.optional(types.boolean, false),
 

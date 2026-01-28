@@ -8,7 +8,7 @@ export default {
   },
   videoHopSize: {
     description: "Video hop size",
-    defaultValue: 10,
+    defaultValue: 1,
     type: "number",
   },
 } as SettingsProperties;

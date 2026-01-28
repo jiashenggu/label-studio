@@ -8,7 +8,7 @@ import ControlBase from "./Base";
 
 /**
  * VideoRewardAnnotation tag enables reward curve annotation for videos.
- * It provides a popup window with a curve editor and rubrics display for annotating
+ * It provides an inline curve editor and rubrics display for annotating
  * reward values over time. This is separate from VideoRectangle and designed for
  * reinforcement learning reward annotation tasks.
  *
@@ -43,9 +43,6 @@ const ModelAttrs = types.model("VideoRewardAnnotationModel", {
 
 const Model = types
   .model({})
-  .volatile(() => ({
-    isEditorOpen: false,
-  }))
   .views((self) => ({
     get numStagesValue() {
       return Number.parseInt(self.numstages, 10) || 3;
@@ -70,76 +67,34 @@ const Model = types
       const root = getRoot(self);
       return root?.annotationStore?.selected?.names?.get(name);
     },
-  }))
-  .actions((self) => ({
-    openEditor() {
-      self.isEditorOpen = true;
-    },
-    closeEditor() {
-      self.isEditorOpen = false;
-    },
   }));
 
 const VideoRewardAnnotationModel = types.compose("VideoRewardAnnotationModel", ControlBase, ModelAttrs, TagAttrs, Model);
 
 const HtxVideoRewardAnnotation = observer(({ item }) => {
-  const [ModalComponent, setModalComponent] = useState(null);
+  const [EditorComponent, setEditorComponent] = useState(null);
 
   useEffect(() => {
-    console.log('[VideoRewardAnnotation] Component mounted, item:', item);
-    // Dynamically import the modal component
-    import("../../components/VideoRewardAnnotation/RewardAnnotationModal").then((module) => {
-      console.log('[VideoRewardAnnotation] Modal component loaded');
-      setModalComponent(() => module.default);
+    // Dynamically import the inline editor component
+    import("../../components/VideoRewardAnnotation/RewardAnnotationEditor").then((module) => {
+      setEditorComponent(() => module.default);
     });
   }, []);
 
-  const handleOpenEditor = () => {
-    console.log('[VideoRewardAnnotation] Button clicked, opening editor');
-    console.log('[VideoRewardAnnotation] item.isEditorOpen before:', item.isEditorOpen);
-    item.openEditor();
-    console.log('[VideoRewardAnnotation] item.isEditorOpen after:', item.isEditorOpen);
-  };
+  console.log('[VideoRewardAnnotation] Rendering inline editor');
 
-  const handleCloseEditor = () => {
-    console.log('[VideoRewardAnnotation] Closing editor');
-    item.closeEditor();
-  };
-
-  console.log('[VideoRewardAnnotation] Rendering, isEditorOpen:', item.isEditorOpen, 'ModalComponent:', !!ModalComponent);
+  if (!EditorComponent) {
+    return <div style={{ padding: '20px', textAlign: 'center' }}>Loading reward annotation editor...</div>;
+  }
 
   return (
-    <div className="htx-video-reward-annotation">
-      <button
-        type="button"
-        onClick={handleOpenEditor}
-        style={{
-          padding: "8px 16px",
-          backgroundColor: "#e94560",
-          color: "white",
-          border: "none",
-          borderRadius: "6px",
-          cursor: "pointer",
-          fontWeight: 500,
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-        }}
-      >
-        <span>Open Reward Annotation Editor</span>
-      </button>
-
-      {item.isEditorOpen && ModalComponent && (
-        <ModalComponent
-          item={item}
-          videoObject={item.videoObject}
-          numStages={item.numStagesValue}
-          stageNames={item.stageNamesArray}
-          rubric={item.rubricData}
-          onClose={handleCloseEditor}
-        />
-      )}
-    </div>
+    <EditorComponent
+      item={item}
+      videoObject={item.videoObject}
+      numStages={item.numStagesValue}
+      stageNames={item.stageNamesArray}
+      rubric={item.rubricData}
+    />
   );
 });
 

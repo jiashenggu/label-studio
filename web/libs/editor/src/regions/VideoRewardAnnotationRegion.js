@@ -19,6 +19,10 @@ const Model = types
     type: "videorewardannotationregion",
     object: types.late(() => types.reference(VideoModel)),
 
+    // Empty sequence for compatibility with Timeline UI
+    // VideoRewardAnnotation doesn't use keyframes/sequence
+    sequence: types.optional(types.frozen([]), []),
+
     // Control points define the key points of the reward curve
     // Each point has: time (seconds), reward (value), type ('normal' or 'step')
     controlPoints: types.frozen([]),
@@ -32,12 +36,54 @@ const Model = types
     // Number of stages for this annotation
     numStages: types.optional(types.number, 3),
   })
+  .preProcessSnapshot((snapshot) => {
+    // Handle deserialization: extract data from value if it exists
+    if (snapshot.value) {
+      return {
+        ...snapshot,
+        controlPoints: snapshot.value.controlPoints || snapshot.controlPoints || [],
+        denseRewards: snapshot.value.denseRewards || snapshot.denseRewards || [],
+        fitMethod: snapshot.value.fitMethod || snapshot.fitMethod || "pchip",
+        numStages: snapshot.value.numStages || snapshot.numStages || 3,
+      };
+    }
+    return snapshot;
+  })
   .volatile(() => ({
     hideable: true,
   }))
   .views((self) => ({
     get parent() {
       return self.object;
+    },
+
+    /**
+     * Dummy getShape method for compatibility with Video UI
+     * VideoRewardAnnotation doesn't use shapes/keyframes
+     */
+    getShape(frame) {
+      return null;
+    },
+
+    /**
+     * Dummy getVisibility method for compatibility with Video UI
+     */
+    getVisibility() {
+      return true;
+    },
+
+    /**
+     * Always in lifespan since reward curves apply to entire video
+     */
+    isInLifespan(targetFrame) {
+      return true;
+    },
+
+    /**
+     * Dummy closestKeypoint for compatibility
+     */
+    closestKeypoint(targetFrame, onlyPrevious = false) {
+      return null;
     },
 
     /**
@@ -87,6 +133,39 @@ const Model = types
     },
   }))
   .actions((self) => ({
+    /**
+     * Dummy methods for compatibility with VideoRegion interface
+     */
+    updateShape() {
+      // VideoRewardAnnotation doesn't use shapes
+    },
+
+    toggleLifespan(frame) {
+      // VideoRewardAnnotation doesn't use keyframe lifespans
+    },
+
+    addKeypoint(frame) {
+      // VideoRewardAnnotation doesn't use keyframes
+    },
+
+    removeKeypoint(frame) {
+      // VideoRewardAnnotation doesn't use keyframes
+    },
+
+    updateKeypointOptions(frame, options) {
+      // VideoRewardAnnotation doesn't use keyframes
+    },
+
+    onSelectInOutliner() {
+      // Can skip to first control point if needed
+      if (self.controlPoints.length > 0) {
+        const firstPoint = self.controlPoints[0];
+        const fps = self.object?.framerate || 30;
+        const frame = Math.floor(firstPoint.time * fps);
+        self.object?.setFrame(frame);
+      }
+    },
+
     /**
      * Add a control point
      * @param {number} time - Time in seconds
@@ -160,6 +239,43 @@ const Model = types
     clearAnnotation() {
       self.controlPoints = [];
       self.denseRewards = [];
+    },
+
+    /**
+     * Update annotation data
+     * @param {Object} data - Object with controlPoints, denseRewards, fitMethod, numStages
+     */
+    updateAnnotationData(data) {
+      console.log('[VideoRewardAnnotationRegion] updateAnnotationData called', data);
+      console.log('[VideoRewardAnnotationRegion] Before update:', {
+        controlPoints: self.controlPoints,
+        denseRewards: self.denseRewards,
+      });
+      
+      // Only update if data has actually changed to avoid unnecessary history entries
+      if (data.controlPoints !== undefined) {
+        const isSame = JSON.stringify(self.controlPoints) === JSON.stringify(data.controlPoints);
+        if (!isSame) {
+          self.controlPoints = data.controlPoints;
+        }
+      }
+      if (data.denseRewards !== undefined) {
+        const isSame = JSON.stringify(self.denseRewards) === JSON.stringify(data.denseRewards);
+        if (!isSame) {
+          self.denseRewards = data.denseRewards;
+        }
+      }
+      if (data.fitMethod !== undefined && self.fitMethod !== data.fitMethod) {
+        self.fitMethod = data.fitMethod;
+      }
+      if (data.numStages !== undefined && self.numStages !== data.numStages) {
+        self.numStages = data.numStages;
+      }
+      
+      console.log('[VideoRewardAnnotationRegion] After update:', {
+        controlPoints: self.controlPoints,
+        denseRewards: self.denseRewards,
+      });
     },
 
     /**

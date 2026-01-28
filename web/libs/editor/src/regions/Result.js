@@ -36,6 +36,7 @@ const resultTypes = [
   "rating",
   "pairwise",
   "videorectangle",
+  "videorewardannotation",
   "ranker",
   "custominterface",
 ];
@@ -50,6 +51,8 @@ const resultValues = {
   choices: types.maybe(types.array(types.union(types.string, types.array(types.string)))),
   // pairwise
   selected: types.maybe(types.enumeration(["left", "right"])),
+  // videorewardannotation
+  videorewardannotation: types.frozen(),
   // @todo all other *labels
   labels: types.maybe(types.array(types.string)),
   htmllabels: types.maybe(types.array(types.string)),

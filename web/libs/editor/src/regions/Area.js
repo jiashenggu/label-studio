@@ -16,6 +16,7 @@ import { TimelineRegionModel } from "./TimelineRegion";
 import { TimeSeriesRegionModel } from "./TimeSeriesRegion";
 import { ParagraphsRegionModel } from "./ParagraphsRegion";
 import { VideoRectangleRegionModel } from "./VideoRectangleRegion";
+import { VideoRewardAnnotationRegionModel } from "./VideoRewardAnnotationRegion";
 import { BitmaskRegionModel } from "./BitmaskRegion";
 import { CustomRegionModel } from "./CustomRegion";
 
@@ -76,9 +77,11 @@ const Area = types.union(
       const available = Registry.getAvailableAreas(tag.type, sn);
       // union of all available Areas for this Object type
 
-      // @todo dirty hack to distinguish two video types
+      // @todo dirty hack to distinguish video region types
       if (tag.type === "video") {
         if (sn.sequence || sn.value?.sequence) return VideoRectangleRegionModel;
+        // VideoRewardAnnotation regions have controlPoints and denseRewards
+        if (sn.value?.controlPoints || sn.value?.denseRewards) return VideoRewardAnnotationRegionModel;
         return TimelineRegionModel;
       }
 
@@ -99,6 +102,7 @@ const Area = types.union(
   BrushRegionModel,
   BitmaskRegionModel,
   VideoRectangleRegionModel,
+  VideoRewardAnnotationRegionModel,
   ClassificationArea,
   CustomRegionModel,
   ...Registry.customTags.map((t) => t.region).filter(Boolean),

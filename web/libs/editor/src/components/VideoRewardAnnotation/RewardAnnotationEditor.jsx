@@ -20,11 +20,28 @@ const PADDING = { top: 30, right: 30, bottom: 50, left: 60 };
 const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNames, rubric }) => {
   console.log('[RewardAnnotationEditor] Rendering inline with props:', { item, videoObject, numStages, stageNames, rubric });
   
-  // State
-  const [controlPoints, setControlPoints] = useState([]);
-  const [denseRewards, setDenseRewards] = useState([]);
+  // Get or create the region
+  const region = item?.result?.area;
+  
+  // Ensure region exists
+  useEffect(() => {
+    if (!item || !videoObject) return;
+    
+    // Create initial result if it doesn't exist
+    if (!item.result) {
+      console.log('[RewardAnnotationEditor] Creating initial result');
+      item.createResult?.({
+        controlPoints: [],
+        denseRewards: [],
+        fitMethod: "pchip",
+        numStages,
+        duration: videoObject?.ref?.current?.duration || 60,
+      });
+    }
+  }, [item, videoObject, numStages]);
+  
+  // UI State only (not data state)
   const [selectedPointIndex, setSelectedPointIndex] = useState(-1);
-  const [fitMethod, setFitMethod] = useState("pchip");
   const [currentTime, setCurrentTime] = useState(0);
   const [autoFit, setAutoFit] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -33,6 +50,11 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   // Refs
   const canvasRef = useRef(null);
   const scrollPositionRef = useRef(0);
+
+  // Get data directly from region
+  const controlPoints = region?.controlPoints || [];
+  const denseRewards = region?.denseRewards || [];
+  const fitMethod = region?.fitMethod || "pchip";
 
   // Video info
   const duration = videoObject?.ref?.current?.duration || 60;
@@ -109,17 +131,25 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     };
   }, [videoObject]);
 
-  // Fit curve
+  // Fit curve - directly update region
   useEffect(() => {
-    if (controlPoints.length < 2 || !autoFit) {
-      setDenseRewards([]);
+    if (!region || !autoFit) return;
+    if (controlPoints.length < 2) {
+      if (region.denseRewards?.length > 0) {
+        region.setDenseRewards([]);
+      }
       return;
     }
 
     const sorted = [...controlPoints].sort((a, b) => a.time - b.time);
     const fitted = fitCurve(sorted, validDuration, validFps, fitMethod);
-    setDenseRewards(fitted);
-  }, [controlPoints, validDuration, validFps, fitMethod, autoFit]);
+    
+    // Only update if different
+    const isSame = JSON.stringify(region.denseRewards) === JSON.stringify(fitted);
+    if (!isSame) {
+      region.setDenseRewards(fitted);
+    }
+  }, [controlPoints, validDuration, validFps, fitMethod, autoFit, region]);
 
   // Prevent scroll when modal is open
   useEffect(() => {
@@ -346,9 +376,9 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     }
   };
 
-  // Apply edit from modal
+  // Apply edit from modal - directly update region
   const applyEdit = () => {
-    if (!editingPoint) return;
+    if (!editingPoint || !region) return;
 
     if (editingPoint.index >= 0) {
       // Update existing point
@@ -358,7 +388,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
         reward: editingPoint.reward,
         type: editingPoint.type,
       };
-      setControlPoints(newPoints);
+      region.setControlPoints(newPoints);
     } else {
       // Add new point
       const newPoint = {
@@ -366,7 +396,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
         reward: editingPoint.reward,
         type: editingPoint.type,
       };
-      setControlPoints([...controlPoints, newPoint]);
+      region.setControlPoints([...controlPoints, newPoint]);
       setSelectedPointIndex(controlPoints.length);
     }
 
@@ -380,42 +410,21 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     setEditingPoint(null);
   };
 
-  // Delete selected point
+  // Delete selected point - directly update region
   const deleteSelectedPoint = () => {
-    if (selectedPointIndex < 0) return;
+    if (selectedPointIndex < 0 || !region) return;
     const newPoints = controlPoints.filter((_, i) => i !== selectedPointIndex);
-    setControlPoints(newPoints);
+    region.setControlPoints(newPoints);
     setSelectedPointIndex(-1);
   };
 
-  // Clear all
+  // Clear all - directly update region
   const clearAll = () => {
+    if (!region) return;
     if (window.confirm("Clear all control points?")) {
-      setControlPoints([]);
+      region.clearAnnotation();
       setSelectedPointIndex(-1);
     }
-  };
-
-  // Save annotation
-  const saveAnnotation = () => {
-    const annotation = item?.annotation;
-    if (!annotation) return;
-
-    const result = {
-      from_name: item.name,
-      to_name: item.toname,
-      type: "videorewardannotation",
-      value: {
-        controlPoints,
-        denseRewards,
-        fitMethod,
-        numStages,
-        duration: validDuration,
-      },
-    };
-
-    annotation.addResult(result);
-    alert("Annotation saved!");
   };
 
   return (
@@ -445,12 +454,6 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
           </div>
 
           <div className="reward-editor__controls">
-            <div className="reward-editor__toolbar">
-              <button type="button" onClick={saveAnnotation} className="reward-editor__btn reward-editor__btn--primary">
-                Save Annotation
-              </button>
-            </div>
-            
             <div className="reward-editor__toolbar">
               <button 
                 type="button" 
@@ -518,7 +521,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
             <div className="reward-editor__settings">
               <label>
                 Fit Method:
-                <select value={fitMethod} onChange={(e) => setFitMethod(e.target.value)} className="reward-editor__select">
+                <select value={fitMethod} onChange={(e) => region?.setFitMethod(e.target.value)} className="reward-editor__select">
                   <option value="pchip">PCHIP</option>
                   <option value="linear">Linear</option>
                 </select>

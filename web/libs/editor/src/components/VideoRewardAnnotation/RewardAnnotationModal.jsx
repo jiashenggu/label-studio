@@ -552,29 +552,27 @@ const RewardAnnotationModal = observer(({ item, videoObject, numStages, stageNam
     }
   }, [saveStateForUndo]);
 
-  // Save annotation
-  const saveAnnotation = useCallback(() => {
-    // Get or create region
-    const annotation = item?.annotation;
-    if (!annotation) return;
+  // Auto-save annotation whenever data changes
+  useEffect(() => {
+    if (!item) return;
 
-    // Create result value
-    const result = {
-      from_name: item.name,
-      to_name: item.toname,
-      type: "videorewardannotation",
-      value: {
-        controlPoints,
-        denseRewards,
-        fitMethod,
-        numStages,
-        duration,
-      },
+    // Only update if we have control points
+    if (controlPoints.length === 0) {
+      // Clear result if no control points
+      item.clearResult?.();
+      return;
+    }
+
+    const data = {
+      controlPoints,
+      denseRewards,
+      fitMethod,
+      numStages,
+      duration,
     };
 
-    // Add to annotation
-    annotation.addResult(result);
-  }, [item, controlPoints, denseRewards, fitMethod, numStages, duration]);
+    item.updateResult?.(data);
+  }, [controlPoints, denseRewards, fitMethod, item, numStages, duration]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -588,13 +586,6 @@ const RewardAnnotationModal = observer(({ item, videoObject, numStages, stageNam
           e.preventDefault();
           applyEdit();
         }
-        return;
-      }
-
-      // Cmd/Ctrl + S to save
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        saveAnnotation();
         return;
       }
 
@@ -672,7 +663,6 @@ const RewardAnnotationModal = observer(({ item, videoObject, numStages, stageNam
     onClose,
     openAddPointModal,
     redo,
-    saveAnnotation,
     selectedPointIndex,
     showRubricPanel,
     toggleStepType,
@@ -804,11 +794,8 @@ const RewardAnnotationModal = observer(({ item, videoObject, numStages, stageNam
             </div>
 
             <div className="reward-modal__card">
-              <h3>Save / Load</h3>
+              <h3>Actions</h3>
               <div className="reward-modal__toolbar">
-                <button type="button" className="reward-modal__btn reward-modal__btn--success" onClick={saveAnnotation}>
-                  Save
-                </button>
                 <button type="button" className="reward-modal__btn reward-modal__btn--secondary" onClick={undo}>
                   Undo
                 </button>
@@ -862,7 +849,7 @@ const RewardAnnotationModal = observer(({ item, videoObject, numStages, stageNam
             </div>
 
             <div className="reward-modal__shortcuts">
-              <kbd>Ctrl+S</kbd> Save <kbd>Ctrl+Z</kbd> Undo <kbd>S</kbd> Toggle Step <kbd>R</kbd> Rubric <kbd>Enter</kbd>{" "}
+              <kbd>Ctrl+Z</kbd> Undo <kbd>S</kbd> Toggle Step <kbd>R</kbd> Rubric <kbd>Enter</kbd>{" "}
               Add Point <kbd>Del</kbd> Delete <kbd>Esc</kbd> Close
             </div>
           </div>

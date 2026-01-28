@@ -5,6 +5,7 @@ import { types, getRoot } from "mobx-state-tree";
 import Registry from "../../core/Registry";
 import { guidGenerator } from "../../core/Helpers";
 import ControlBase from "./Base";
+import { AnnotationMixin } from "../../mixins/AnnotationMixin";
 
 /**
  * VideoRewardAnnotation tag enables reward curve annotation for videos.
@@ -68,9 +69,68 @@ const Model = types
       const root = getRoot(self);
       return root?.annotationStore?.selected?.names?.get(name);
     },
+    get result() {
+      return self.annotation?.results.find((r) => r.from_name === self && r.type === "videorewardannotation");
+    },
+    get resultType() {
+      return "videorewardannotation";
+    },
+    get valueType() {
+      return "videorewardannotation";
+    },
+  }))
+  .actions((self) => ({
+    createResult(data) {
+      console.log('[VideoRewardAnnotation] createResult called with data:', data);
+      console.log('[VideoRewardAnnotation] self:', self);
+      console.log('[VideoRewardAnnotation] self.annotation:', self.annotation);
+      console.log('[VideoRewardAnnotation] self.videoObject:', self.videoObject);
+      console.log('[VideoRewardAnnotation] self.toname:', self.toname);
+      console.log('[VideoRewardAnnotation] self.name:', self.name);
+      
+      if (!self.annotation || !self.videoObject) {
+        console.warn('[VideoRewardAnnotation] Missing annotation or videoObject');
+        console.warn('[VideoRewardAnnotation] annotation exists:', !!self.annotation);
+        console.warn('[VideoRewardAnnotation] videoObject exists:', !!self.videoObject);
+        return;
+      }
+      // Pass data as areaValue, not resultValue
+      // The region fields (controlPoints, denseRewards, etc.) go in areaValue
+      const area = self.annotation.createResult(data, {}, self, self.videoObject);
+      console.log('[VideoRewardAnnotation] createResult returned area:', area);
+      return area;
+    },
+
+    updateResult(data) {
+      console.log('[VideoRewardAnnotation] updateResult called with data:', data);
+      // check if result exists already
+      if (self.result) {
+        console.log('[VideoRewardAnnotation] Found existing result, updating area');
+        // Use the region's action method to update data
+        // This ensures MobX properly tracks the changes
+        const area = self.result.area;
+        console.log('[VideoRewardAnnotation] Area:', area);
+        if (area && area.updateAnnotationData) {
+          console.log('[VideoRewardAnnotation] Calling updateAnnotationData');
+          area.updateAnnotationData(data);
+          console.log('[VideoRewardAnnotation] After update, controlPoints:', area.controlPoints);
+        } else {
+          console.warn('[VideoRewardAnnotation] Area or updateAnnotationData not found');
+        }
+      } else {
+        console.log('[VideoRewardAnnotation] No existing result, creating new one');
+        self.createResult(data);
+      }
+    },
+
+    clearResult() {
+      if (self.result) {
+        self.result.area.removeResult(self.result);
+      }
+    },
   }));
 
-const VideoRewardAnnotationModel = types.compose("VideoRewardAnnotationModel", ControlBase, ModelAttrs, TagAttrs, Model);
+const VideoRewardAnnotationModel = types.compose("VideoRewardAnnotationModel", ControlBase, AnnotationMixin, ModelAttrs, TagAttrs, Model);
 
 const HtxVideoRewardAnnotation = observer(({ item }) => {
   const [EditorComponent, setEditorComponent] = useState(null);

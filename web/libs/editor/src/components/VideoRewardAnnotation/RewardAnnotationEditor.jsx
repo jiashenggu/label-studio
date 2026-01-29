@@ -44,6 +44,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   const [selectedPointIndex, setSelectedPointIndex] = useState(-1);
   const [currentTime, setCurrentTime] = useState(0);
   const [hoverTime, setHoverTime] = useState(0);
+  const [isPaused, setIsPaused] = useState(true);
   const [autoFit, setAutoFit] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPoint, setEditingPoint] = useState(null);
@@ -51,6 +52,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   // Refs
   const canvasRef = useRef(null);
   const scrollPositionRef = useRef(0);
+  const isHoveringRef = useRef(false);
 
   // Get data directly from region
   const controlPoints = region?.controlPoints || [];
@@ -114,27 +116,96 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     
     const videoEl = videoObject.ref.current;
     
-    // Check if it's a valid DOM element
+    // Check if it's a valid DOM element or ref object with addEventListener
     if (!videoEl || typeof videoEl.addEventListener !== 'function') {
-      console.warn('[RewardAnnotationEditor] Video element not ready');
+      console.warn('[RewardAnnotationEditor] Video element not ready or missing addEventListener');
       return;
     }
     
     const handleTimeUpdate = () => {
-      setCurrentTime(videoEl.currentTime || 0);
-      // Also update hover time if not actively hovering
-      if (Math.abs(hoverTime - currentTime) < 0.1) {
+      const newTime = videoEl.currentTime || 0;
+      const paused = videoEl.paused;
+      console.log('[VideoRewardAnnotation] timeupdate event:', newTime, 'paused:', paused, 'isHovering:', isHoveringRef.current);
+      setCurrentTime(newTime);
+      setIsPaused(paused);
+      
+      // Always update hover time when not actively hovering on RewardAnnotation canvas
+      // This ensures the indicator updates when hovering on VideoRectangle timeline
+      if (!isHoveringRef.current) {
+        console.log('[VideoRewardAnnotation] Updating hoverTime to:', newTime);
+        setHoverTime(newTime);
+      }
+    };
+
+    const handleSeeking = () => {
+      // Fired when seeking starts
+      const newTime = videoEl.currentTime || 0;
+      const paused = videoEl.paused;
+      console.log('[VideoRewardAnnotation] seeking event:', newTime, 'paused:', paused, 'isHovering:', isHoveringRef.current);
+      setCurrentTime(newTime);
+      setIsPaused(paused);
+      
+      // Always update hover time when not actively hovering on RewardAnnotation canvas
+      // This ensures the indicator updates when hovering on VideoRectangle timeline
+      if (!isHoveringRef.current) {
+        console.log('[VideoRewardAnnotation] Updating hoverTime from seeking to:', newTime);
+        setHoverTime(newTime);
+      }
+    };
+
+    const handleSeeked = () => {
+      // Fired immediately after a seek operation completes
+      const newTime = videoEl.currentTime || 0;
+      const paused = videoEl.paused;
+      console.log('[VideoRewardAnnotation] seeked event:', newTime, 'paused:', paused, 'isHovering:', isHoveringRef.current);
+      setCurrentTime(newTime);
+      setIsPaused(paused);
+      
+      // Always update hover time when not actively hovering on RewardAnnotation canvas
+      // This ensures the indicator updates when hovering on VideoRectangle timeline
+      if (!isHoveringRef.current) {
+        console.log('[VideoRewardAnnotation] Updating hoverTime from seeked to:', newTime);
+        setHoverTime(newTime);
+      }
+    };
+
+    const handlePlay = () => {
+      console.log('[VideoRewardAnnotation] play event');
+      setIsPaused(false);
+    };
+
+    const handlePause = () => {
+      console.log('[VideoRewardAnnotation] pause event');
+      setIsPaused(true);
+      // When paused, sync hoverTime with currentTime if not actively hovering
+      if (!isHoveringRef.current) {
         setHoverTime(videoEl.currentTime || 0);
       }
     };
 
     videoEl.addEventListener("timeupdate", handleTimeUpdate);
+    videoEl.addEventListener("seeking", handleSeeking);
+    videoEl.addEventListener("seeked", handleSeeked);
+    videoEl.addEventListener("play", handlePlay);
+    videoEl.addEventListener("pause", handlePause);
+    
+    // Initial sync
+    setCurrentTime(videoEl.currentTime || 0);
+    setIsPaused(videoEl.paused);
+    if (!isHoveringRef.current) {
+      setHoverTime(videoEl.currentTime || 0);
+    }
+    
     return () => {
       if (videoEl && typeof videoEl.removeEventListener === 'function') {
         videoEl.removeEventListener("timeupdate", handleTimeUpdate);
+        videoEl.removeEventListener("seeking", handleSeeking);
+        videoEl.removeEventListener("seeked", handleSeeked);
+        videoEl.removeEventListener("play", handlePlay);
+        videoEl.removeEventListener("pause", handlePause);
       }
     };
-  }, [videoObject, hoverTime, currentTime]);
+  }, [videoObject]);
 
   // Fit curve - directly update region
   useEffect(() => {
@@ -337,9 +408,15 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Draw hover time indicator (orange solid line) if different from current time
-    if (Math.abs(hoverTime - currentTime) > 0.1) {
+    // Draw hover time indicator (orange solid line)
+    // Show when video is paused to indicate the current seek position
+    // This works for both hovering on RewardAnnotation canvas AND VideoRectangle timeline
+    console.log('[VideoRewardAnnotation] Drawing canvas. isPaused:', isPaused, 'hoverTime:', hoverTime, 'currentTime:', currentTime);
+    
+    if (isPaused) {
+      // When paused, show orange indicator at the hover/seek position
       const hoverX = timeToX(hoverTime);
+      console.log('[VideoRewardAnnotation] Drawing orange indicator at x:', hoverX, 'for time:', hoverTime);
       ctx.strokeStyle = "rgba(251, 191, 36, 0.9)";
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -353,7 +430,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       ctx.textAlign = "center";
       ctx.fillText(`${hoverTime.toFixed(2)}s`, hoverX, area.y - 10);
     }
-  }, [controlPoints, denseRewards, selectedPointIndex, currentTime, hoverTime, validDuration, validFps, numStages, timeToX, rewardToY, getPlotArea]);
+  }, [controlPoints, denseRewards, selectedPointIndex, currentTime, hoverTime, isPaused, validDuration, validFps, numStages, timeToX, rewardToY, getPlotArea]);
 
   // Handle canvas click
   const handleCanvasClick = (e) => {
@@ -410,6 +487,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     // Only update if mouse is within plot area
     if (x >= area.x && x <= area.x + area.width) {
       const time = xToTime(x);
+      isHoveringRef.current = true;
       setHoverTime(time);
       
       // Seek video to this time
@@ -425,6 +503,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
 
   // Handle canvas mouse leave - reset hover indicator
   const handleCanvasMouseLeave = () => {
+    isHoveringRef.current = false;
     setHoverTime(currentTime);
   };
 

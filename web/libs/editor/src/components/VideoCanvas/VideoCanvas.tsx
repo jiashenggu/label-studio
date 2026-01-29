@@ -94,6 +94,7 @@ export interface VideoRef {
     ratio: number;
   };
   readonly duration: number;
+  readonly paused: boolean;
   play: () => void;
   pause: () => void;
   goToFrame: (frame: number) => void;
@@ -105,6 +106,8 @@ export interface VideoRef {
   setZoom: (value: number) => void;
   setPan: (x: number, y: number) => void;
   adjustPan: (x: number, y: number) => PanOptions;
+  addEventListener: (event: string, handler: any, options?: any) => void;
+  removeEventListener: (event: string, handler: any, options?: any) => void;
 }
 
 const useBufferingWrapper = (props: VideoProps): [boolean, (isBuffering: boolean) => void] => {
@@ -551,6 +554,29 @@ export const VideoCanvas = memo(
 
         // Round to next closest browser precision frame time
         this.currentTime = this.frameSteppedTime(exactTime, true);
+      },
+      // Expose event listener methods for components like VideoRewardAnnotation
+      // that need to listen to video events (timeupdate, seeking, seeked, etc.)
+      addEventListener(event: string, handler: any, options?: any) {
+        if (isImageSequenceMode) {
+          // Image sequences have custom event handling
+          imageSequenceRef.current?.addEventListener?.(event, handler, options);
+        } else {
+          videoRef.current?.addEventListener(event, handler, options);
+        }
+      },
+      removeEventListener(event: string, handler: any, options?: any) {
+        if (isImageSequenceMode) {
+          imageSequenceRef.current?.removeEventListener?.(event, handler, options);
+        } else {
+          videoRef.current?.removeEventListener(event, handler, options);
+        }
+      },
+      // Expose paused state for components that need it
+      get paused() {
+        return isImageSequenceMode
+          ? (imageSequenceRef.current?.paused ?? true)
+          : (videoRef.current?.paused ?? true);
       },
     };
 

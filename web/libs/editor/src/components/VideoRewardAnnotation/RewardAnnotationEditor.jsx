@@ -3,7 +3,12 @@ import { createPortal } from "react-dom";
 import { observer } from "mobx-react";
 import { fitCurve, clamp } from "./curveFitting";
 import { useHotkey } from "../../hooks/useHotkey";
+import { Hotkey } from "../../core/Hotkey";
 import "./RewardAnnotationEditor.scss";
+
+// Dedicated scope for VideoRewardAnnotation hotkeys
+// When mouse hovers over the canvas, this scope becomes active
+const REWARD_ANNOTATION_SCOPE = "__reward_annotation__";
 
 // Stage colors for background (pastel)
 const STAGE_COLORS = [
@@ -62,6 +67,8 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   const canvasRef = useRef(null);
   const scrollPositionRef = useRef(0);
   const isHoveringRef = useRef(false);
+  const isMouseMovingRef = useRef(false); // Track if mouse is actively moving
+  const mouseMoveTimeoutRef = useRef(null); // Timeout to detect when mouse stops moving
 
   // Get data directly from region
   const controlPoints = region?.controlPoints || [];
@@ -127,14 +134,44 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     [numStages, getPlotArea],
   );
 
-  // Hotkey handler for keypoint toggle
-  // Note: Frame navigation (step forward/backward) is handled by the Timeline Controls
-  // to avoid conflicts. The RewardAnnotationEditor responds to video timeupdate events.
+  // Hotkey handlers for frame navigation (scoped to this component)
+  // These handlers only fire when the cursor is hovering over the RewardAnnotation canvas
+  const handleStepBackward = useCallback(() => {
+    if (!videoObject?.setFrame) return;
+    // hoverFrame is 0-indexed, but setFrame expects 1-indexed
+    const hoverFrame1Indexed = hoverFrame + 1;
+    const newFrame = Math.max(1, hoverFrame1Indexed - 1);
+    console.log("[VideoRewardAnnotation] Step backward from frame:", hoverFrame1Indexed, "to:", newFrame);
+    videoObject.setFrame(newFrame);
+    setHoverFrame(newFrame - 1); // Convert back to 0-indexed for internal state
+  }, [videoObject, hoverFrame]);
+
+  const handleStepForward = useCallback(() => {
+    if (!videoObject?.setFrame) return;
+    // hoverFrame is 0-indexed, but setFrame expects 1-indexed
+    const hoverFrame1Indexed = hoverFrame + 1;
+    const maxFrame = Math.floor(validDuration * validFps) + 1; // Convert to 1-indexed
+    const newFrame = Math.min(maxFrame, hoverFrame1Indexed + 1);
+    console.log("[VideoRewardAnnotation] Step forward from frame:", hoverFrame1Indexed, "to:", newFrame);
+    videoObject.setFrame(newFrame);
+    setHoverFrame(newFrame - 1); // Convert back to 0-indexed for internal state
+  }, [videoObject, hoverFrame, validDuration, validFps]);
+
+  // Hotkey handler for keypoint toggle (scoped to this component)
   const handleKeypointToggle = useCallback(() => {
-    if (!region) return;
+    // Use hoverFrame when hovering, otherwise use currentFrame
+    const frameToUse = isHoveringRef.current ? hoverFrame : currentFrame;
+    console.log("[VideoRewardAnnotation] Keypoint toggle called! Region:", !!region, "frameToUse:", frameToUse, "isHovering:", isHoveringRef.current);
     
-    const currentTimeValue = frameToTime(currentFrame);
+    if (!region) {
+      console.warn("[VideoRewardAnnotation] No region available, cannot toggle keypoint");
+      return;
+    }
+    
+    const currentTimeValue = frameToTime(frameToUse);
     const threshold = 0.1; // 100ms threshold
+    
+    console.log("[VideoRewardAnnotation] Looking for point near time:", currentTimeValue, "controlPoints:", controlPoints.length);
     
     // Check if there's a control point at or near the current time
     const pointIndex = controlPoints.findIndex(
@@ -142,29 +179,55 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     );
     
     if (pointIndex >= 0) {
-      // Remove the point at current frame
-      const newPoints = controlPoints.filter((_, i) => i !== pointIndex);
-      region.setControlPoints(newPoints);
-      setSelectedPointIndex(-1);
+      // Edit existing point - open modal
+      console.log("[VideoRewardAnnotation] Found existing point at index:", pointIndex);
+      setSelectedPointIndex(pointIndex);
+      setEditingPoint({
+        index: pointIndex,
+        time: controlPoints[pointIndex].time,
+        reward: controlPoints[pointIndex].reward,
+        type: controlPoints[pointIndex].type || "normal",
+      });
+      setIsEditModalOpen(true);
+      console.log("[VideoRewardAnnotation] Modal should be open now (edit mode)");
     } else {
-      // Add a new point at current frame
-      // Calculate reward at current position based on curve or default to middle
+      // Add new point - open modal with current position
+      console.log("[VideoRewardAnnotation] Adding new point at time:", currentTimeValue);
       let reward = numStages / 2;
-      if (denseRewards.length > currentFrame) {
-        reward = denseRewards[currentFrame];
+      if (denseRewards.length > frameToUse) {
+        reward = denseRewards[frameToUse];
       }
       
       const newPoint = {
+        index: -1, // New point
         time: currentTimeValue,
         reward: reward,
         type: "normal",
       };
-      region.setControlPoints([...controlPoints, newPoint]);
+      
+      console.log("[VideoRewardAnnotation] Setting editingPoint:", newPoint);
+      setEditingPoint(newPoint);
+      setIsEditModalOpen(true);
+      console.log("[VideoRewardAnnotation] Modal should be open now (add mode)");
     }
-  }, [region, currentFrame, frameToTime, controlPoints, numStages, denseRewards]);
+  }, [region, currentFrame, hoverFrame, frameToTime, controlPoints, numStages, denseRewards]);
 
-  // Attach hotkey (only for keypoint toggle, not for navigation)
-  useHotkey("video:keypoint-toggle", handleKeypointToggle);
+  // Attach hotkeys to the custom scope
+  // These hotkeys only fire when REWARD_ANNOTATION_SCOPE is active (i.e., when hovering)
+  useHotkey("media:step-backward", handleStepBackward, REWARD_ANNOTATION_SCOPE);
+  useHotkey("media:step-forward", handleStepForward, REWARD_ANNOTATION_SCOPE);
+  useHotkey("video:keypoint-toggle", handleKeypointToggle, REWARD_ANNOTATION_SCOPE);
+
+  // Cleanup: Reset to default scope when component unmounts
+  useEffect(() => {
+    return () => {
+      console.log("[VideoRewardAnnotation] Component unmounting, resetting to default scope");
+      if (mouseMoveTimeoutRef.current) {
+        clearTimeout(mouseMoveTimeoutRef.current);
+      }
+      Hotkey.setScope(Hotkey.DEFAULT_SCOPE);
+    };
+  }, []);
 
   // Initialize auto-boundary checkboxes based on existing control points (run once on mount)
   useEffect(() => {
@@ -666,6 +729,18 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     const x = e.clientX - rect.left;
     const area = getPlotArea();
 
+    // Mark that mouse is actively moving
+    isMouseMovingRef.current = true;
+
+    // Clear existing timeout and set a new one
+    // When mouse stops moving for 200ms, we mark it as not moving
+    if (mouseMoveTimeoutRef.current) {
+      clearTimeout(mouseMoveTimeoutRef.current);
+    }
+    mouseMoveTimeoutRef.current = setTimeout(() => {
+      isMouseMovingRef.current = false;
+    }, 200);
+
     // Only update if mouse is within plot area
     if (x >= area.x && x <= area.x + area.width) {
       const time = xToTime(x);
@@ -673,8 +748,9 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       isHoveringRef.current = true;
       setHoverFrame(frame);
 
-      // Seek video to this time
-      if (videoObject?.ref?.current && typeof videoObject.ref.current.currentTime !== "undefined") {
+      // Only seek video if mouse is actively moving
+      // This prevents overriding keyboard navigation when mouse is stationary
+      if (isMouseMovingRef.current && videoObject?.ref?.current && typeof videoObject.ref.current.currentTime !== "undefined") {
         const videoEl = videoObject.ref.current;
         // Only seek if video is paused or if time difference is significant
         if (videoEl.paused || Math.abs(videoEl.currentTime - time) > 0.5) {
@@ -684,10 +760,23 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     }
   };
 
-  // Handle canvas mouse leave - reset hover indicator
+  // Handle canvas mouse enter - activate scoped hotkeys
+  const handleCanvasMouseEnter = () => {
+    console.log("[VideoRewardAnnotation] Mouse entered, activating scoped hotkeys");
+    Hotkey.setScope(REWARD_ANNOTATION_SCOPE);
+  };
+
+  // Handle canvas mouse leave - reset hover indicator and deactivate scoped hotkeys
   const handleCanvasMouseLeave = () => {
+    console.log("[VideoRewardAnnotation] Mouse left, deactivating scoped hotkeys");
     isHoveringRef.current = false;
+    isMouseMovingRef.current = false;
+    if (mouseMoveTimeoutRef.current) {
+      clearTimeout(mouseMoveTimeoutRef.current);
+      mouseMoveTimeoutRef.current = null;
+    }
     setHoverFrame(currentFrame);
+    Hotkey.setScope(Hotkey.DEFAULT_SCOPE);
   };
 
   // Apply edit from modal - directly update region
@@ -858,6 +947,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
             <canvas
               ref={canvasRef}
               onClick={handleCanvasClick}
+              onMouseEnter={handleCanvasMouseEnter}
               onMouseMove={handleCanvasMouseMove}
               onMouseLeave={handleCanvasMouseLeave}
               style={{ width: "100%", height: "400px", cursor: "crosshair" }}
@@ -865,7 +955,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
             <div className="reward-editor__legend">
               <span>
                 🔴 Click to add points • ⚡ Yellow = Step transition • 🟢 Green = Selected • Auto-boundary points can be
-                edited • ⬅️➡️ = Frame navigation • ⏎ = Toggle control point
+                edited • <strong>Hover here:</strong> ⬅️➡️ = Frame navigation • ⏎ = Toggle control point
               </span>
             </div>
           </div>
@@ -1002,6 +1092,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
                 {editingPoint.index >= 0 ? "Edit Control Point" : "Add Control Point"}
               </h3>
 
+              <form onSubmit={applyEdit}>
               <div className="reward-editor__form-group">
                 <label
                   style={{
@@ -1116,8 +1207,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
 
               <div className="reward-editor__edit-actions">
                 <button
-                  type="button"
-                  onClick={applyEdit}
+                  type="submit"
                   className="reward-editor__btn reward-editor__btn--primary"
                   style={{
                     padding: "16px 40px",
@@ -1216,6 +1306,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
                   </>
                 )}
               </div>
+              </form>
             </div>
           </div>,
           document.body,

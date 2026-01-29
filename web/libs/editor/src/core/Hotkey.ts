@@ -86,7 +86,12 @@ keymaster.filter = (event) => {
   const inNumberPadCodeRange = (event as any).keyCode >= 96 && (event as any).keyCode <= 105;
 
   if (inNumberPadCodeRange) translateNumpad(event);
-  if (tag) {
+  
+  // Don't auto-switch scope if we're in a custom scope (not DEFAULT or INPUT)
+  const currentScope = keymaster.getScope();
+  const isCustomScope = currentScope !== DEFAULT_SCOPE && currentScope !== INPUT_SCOPE && currentScope !== "__none__";
+  
+  if (tag && !isCustomScope) {
     keymaster.setScope(/^(INPUT|TEXTAREA|SELECT)$/.test(tag) ? INPUT_SCOPE : DEFAULT_SCOPE);
   }
 

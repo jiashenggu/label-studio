@@ -43,6 +43,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   // UI State only (not data state)
   const [selectedPointIndex, setSelectedPointIndex] = useState(-1);
   const [currentTime, setCurrentTime] = useState(0);
+  const [hoverTime, setHoverTime] = useState(0);
   const [autoFit, setAutoFit] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingPoint, setEditingPoint] = useState(null);
@@ -121,6 +122,10 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     
     const handleTimeUpdate = () => {
       setCurrentTime(videoEl.currentTime || 0);
+      // Also update hover time if not actively hovering
+      if (Math.abs(hoverTime - currentTime) < 0.1) {
+        setHoverTime(videoEl.currentTime || 0);
+      }
     };
 
     videoEl.addEventListener("timeupdate", handleTimeUpdate);
@@ -129,7 +134,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
         videoEl.removeEventListener("timeupdate", handleTimeUpdate);
       }
     };
-  }, [videoObject]);
+  }, [videoObject, hoverTime, currentTime]);
 
   // Fit curve - directly update region
   useEffect(() => {
@@ -321,7 +326,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       }
     });
 
-    // Draw current time indicator
+    // Draw current time indicator (green dashed line)
     const currentX = timeToX(currentTime);
     ctx.strokeStyle = "#4ade80";
     ctx.lineWidth = 2;
@@ -331,7 +336,24 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     ctx.lineTo(currentX, area.y + area.height);
     ctx.stroke();
     ctx.setLineDash([]);
-  }, [controlPoints, denseRewards, selectedPointIndex, currentTime, validDuration, validFps, numStages, timeToX, rewardToY, getPlotArea]);
+
+    // Draw hover time indicator (orange solid line) if different from current time
+    if (Math.abs(hoverTime - currentTime) > 0.1) {
+      const hoverX = timeToX(hoverTime);
+      ctx.strokeStyle = "rgba(251, 191, 36, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hoverX, area.y);
+      ctx.lineTo(hoverX, area.y + area.height);
+      ctx.stroke();
+      
+      // Draw time label at top
+      ctx.fillStyle = "rgba(251, 191, 36, 1)";
+      ctx.font = "bold 12px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(`${hoverTime.toFixed(2)}s`, hoverX, area.y - 10);
+    }
+  }, [controlPoints, denseRewards, selectedPointIndex, currentTime, hoverTime, validDuration, validFps, numStages, timeToX, rewardToY, getPlotArea]);
 
   // Handle canvas click
   const handleCanvasClick = (e) => {
@@ -374,6 +396,36 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       });
       setIsEditModalOpen(true);
     }
+  };
+
+  // Handle canvas mouse move - update hover indicator and seek video
+  const handleCanvasMouseMove = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const area = getPlotArea();
+
+    // Only update if mouse is within plot area
+    if (x >= area.x && x <= area.x + area.width) {
+      const time = xToTime(x);
+      setHoverTime(time);
+      
+      // Seek video to this time
+      if (videoObject?.ref?.current && typeof videoObject.ref.current.currentTime !== 'undefined') {
+        const videoEl = videoObject.ref.current;
+        // Only seek if video is paused or if time difference is significant
+        if (videoEl.paused || Math.abs(videoEl.currentTime - time) > 0.5) {
+          videoEl.currentTime = time;
+        }
+      }
+    }
+  };
+
+  // Handle canvas mouse leave - reset hover indicator
+  const handleCanvasMouseLeave = () => {
+    setHoverTime(currentTime);
   };
 
   // Apply edit from modal - directly update region
@@ -453,10 +505,12 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
             <canvas
               ref={canvasRef}
               onClick={handleCanvasClick}
+              onMouseMove={handleCanvasMouseMove}
+              onMouseLeave={handleCanvasMouseLeave}
               style={{ width: "100%", height: "400px", cursor: "crosshair" }}
             />
             <div className="reward-editor__legend">
-              <span>🔴 Click to add points • ⚡ Yellow = Step transition • 🟢 Green = Selected • Delete key to remove</span>
+              <span>🔴 Click to add points • ⚡ Yellow = Step transition • 🟢 Green = Selected • Hover to preview frame</span>
             </div>
           </div>
 

@@ -803,7 +803,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   };
 
   // Apply edit from modal - directly update region
-  const applyEdit = (e) => {
+  const applyEdit = useCallback((e) => {
     // Prevent event bubbling that might interfere with modal closing
     if (e) {
       e.preventDefault();
@@ -857,13 +857,45 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     // Close modal immediately
     setIsEditModalOpen(false);
     setEditingPoint(null);
-  };
+  }, [editingPoint, region, controlPoints, validDuration]);
 
   // Cancel edit
-  const cancelEdit = () => {
+  const cancelEdit = useCallback(() => {
     setIsEditModalOpen(false);
     setEditingPoint(null);
-  };
+  }, []);
+
+  // Handle keyboard shortcuts for modal (ESC to cancel, Enter to submit)
+  useEffect(() => {
+    if (!isEditModalOpen) return;
+
+    const handleModalKeyDown = (e) => {
+      // ESC key - cancel/close modal
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("[VideoRewardAnnotation] ESC pressed, closing modal");
+        cancelEdit();
+      }
+      // Enter key - submit form (only if not already in an input that's handling it)
+      // The form's onSubmit will handle Enter in input fields, so we only need to
+      // handle Enter when focus is NOT on an input/textarea
+      else if (e.key === "Enter" && !["INPUT", "TEXTAREA"].includes(e.target?.tagName)) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log("[VideoRewardAnnotation] Enter pressed outside input, applying edit");
+        applyEdit(e);
+      }
+    };
+
+    // Add event listener to document
+    document.addEventListener("keydown", handleModalKeyDown, true);
+
+    return () => {
+      // Remove event listener when modal closes
+      document.removeEventListener("keydown", handleModalKeyDown, true);
+    };
+  }, [isEditModalOpen, applyEdit, cancelEdit]);
 
   // Delete selected point - directly update region
   const deleteSelectedPoint = () => {

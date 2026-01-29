@@ -157,6 +157,7 @@ const HtxVideoView = ({ item, store }) => {
     limitCanvasDrawingBoundaries,
   );
   const [panMode, setPanMode] = useState(false);
+  const [timelineZoom, setTimelineZoom] = useState(1);
   const [isFullScreen, enterFullscreen, exitFullscren, handleFullscreenToggle] = useToggle(false);
   const fullscreen = useFullscreen({
     onEnterFullscreen() {
@@ -364,6 +365,58 @@ const HtxVideoView = ({ item, store }) => {
     setVideoDimensions(videoDimensions);
   }, []);
 
+  // Auto-fit timeline zoom calculation
+  useEffect(() => {
+    if (!loaded || !videoLength || !videoBlockRef.current) return;
+    
+    const calculateTimelineZoom = () => {
+      const container = videoBlockRef.current;
+      if (!container) return;
+      
+      const containerWidth = container.clientWidth;
+      
+      // Default step size matches the Timeline defaultStepSize prop (line 612)
+      const defaultStepSize = 5;
+      // Timeline has a left offset of ~150px for labels (from Frames.tsx timelineStartOffset)
+      const timelineStartOffset = 150;
+      // Available width for timeline frames
+      const availableWidth = containerWidth - timelineStartOffset - 40; // 40px padding/margins
+      
+      // Calculate zoom to fit all frames in available width
+      // totalWidth = videoLength * defaultStepSize * zoom
+      // We want: videoLength * defaultStepSize * zoom = availableWidth
+      // So: zoom = availableWidth / (videoLength * defaultStepSize)
+      const calculatedZoom = availableWidth / (videoLength * defaultStepSize);
+      
+      // Clamp zoom to reasonable values (min 0.1, max 2)
+      const clampedZoom = Math.max(0.1, Math.min(2, calculatedZoom));
+      
+      console.log('[HtxVideo] Auto-fit timeline zoom:', {
+        containerWidth,
+        videoLength,
+        availableWidth,
+        calculatedZoom,
+        clampedZoom
+      });
+      
+      setTimelineZoom(clampedZoom);
+    };
+    
+    // Calculate initial zoom
+    calculateTimelineZoom();
+    
+    // Recalculate on window resize
+    const handleResize = () => {
+      calculateTimelineZoom();
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [loaded, videoLength]);
+
   const handleVideoEnded = useCallback(() => {
     setPlaying(false);
     setPosition(videoLength);
@@ -567,6 +620,7 @@ const HtxVideoView = ({ item, store }) => {
             length={videoLength}
             position={position}
             regions={regions}
+            zoom={timelineZoom}
             height={item.timelineheight}
             altHopSize={store.settings.videoHopSize}
             allowFullscreen={false}

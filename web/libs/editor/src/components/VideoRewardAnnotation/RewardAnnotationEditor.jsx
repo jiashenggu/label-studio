@@ -127,28 +127,9 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     [numStages, getPlotArea],
   );
 
-  // Hotkey handlers for frame navigation
-  const handleStepBackward = useCallback(() => {
-    if (!videoObject?.ref?.current) return;
-    const videoEl = videoObject.ref.current;
-    const newFrame = Math.max(0, currentFrame - 1);
-    const newTime = frameToTime(newFrame);
-    videoEl.currentTime = newTime;
-    setCurrentFrame(newFrame);
-    setHoverFrame(newFrame);
-  }, [videoObject, currentFrame, frameToTime]);
-
-  const handleStepForward = useCallback(() => {
-    if (!videoObject?.ref?.current) return;
-    const videoEl = videoObject.ref.current;
-    const maxFrame = Math.floor(validDuration * validFps);
-    const newFrame = Math.min(maxFrame, currentFrame + 1);
-    const newTime = frameToTime(newFrame);
-    videoEl.currentTime = newTime;
-    setCurrentFrame(newFrame);
-    setHoverFrame(newFrame);
-  }, [videoObject, currentFrame, validDuration, validFps, frameToTime]);
-
+  // Hotkey handler for keypoint toggle
+  // Note: Frame navigation (step forward/backward) is handled by the Timeline Controls
+  // to avoid conflicts. The RewardAnnotationEditor responds to video timeupdate events.
   const handleKeypointToggle = useCallback(() => {
     if (!region) return;
     
@@ -182,9 +163,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     }
   }, [region, currentFrame, frameToTime, controlPoints, numStages, denseRewards]);
 
-  // Attach hotkeys
-  useHotkey("media:step-backward", handleStepBackward);
-  useHotkey("media:step-forward", handleStepForward);
+  // Attach hotkey (only for keypoint toggle, not for navigation)
   useHotkey("video:keypoint-toggle", handleKeypointToggle);
 
   // Initialize auto-boundary checkboxes based on existing control points (run once on mount)

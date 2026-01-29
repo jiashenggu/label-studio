@@ -190,20 +190,21 @@ export const Frames: FC<TimelineViewProps> = ({
 
         if (currentOffset > 0) {
           setHoverOffset(currentOffset);
+          // Seek video to the hovered frame
+          setIndicatorOffset(currentOffset + currentOffsetX);
         } else {
           setHoverOffset(null);
         }
       }
     },
-    [currentOffsetX, step],
+    [currentOffsetX, step, setIndicatorOffset],
   );
 
   const scrollClickHandler = useCallback(() => {
-    if (hoverOffset) {
-      setIndicatorOffset(hoverOffset + currentOffsetX);
-      setHoverOffset(null);
-    }
-  }, [hoverOffset, currentOffsetX, step, setIndicatorOffset]);
+    // Disabled click-to-seek behavior - now using hover-to-seek
+    // The video position is updated on hover via hoverHandler
+    // This prevents clicking from interfering with hover behavior
+  }, []);
 
   const seekerOffset = useMemo(() => {
     // Position is 1-based, convert to 0-based for pixel calculation

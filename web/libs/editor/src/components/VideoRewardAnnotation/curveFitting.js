@@ -72,9 +72,14 @@ function interpolateAt(sortedPoints, time) {
   if (!nextPoint) return prevPoint.reward;
   if (prevPoint === nextPoint) return prevPoint.reward;
 
-  // Handle step transitions - instant jump to the next value
+  // Handle step transitions
+  // If prevPoint is a step, we've already reached the transition - return its value
+  if (prevPoint.type === "step") {
+    return prevPoint.reward;
+  }
+  
+  // If nextPoint is a step, hold the previous value until we reach the step point
   if (nextPoint.type === "step") {
-    // For step transitions, hold the previous value until we reach the step point
     return prevPoint.reward;
   }
 
@@ -202,10 +207,19 @@ function pchipInterpolateAt(segments, sortedPoints, time) {
 
   for (let s = 0; s < segments.length; s++) {
     const segment = segments[s];
-    const firstTime = segment.points[0].time;
-    const lastTime = segment.points[segment.points.length - 1].time;
+    const segStartTime = segment.points[0].time;
+    let segEndTime;
+    
+    if (s < segments.length - 1) {
+      // Segment ends at the start of next segment (exclusive)
+      segEndTime = segments[s + 1].points[0].time;
+    } else {
+      // Last segment extends to infinity
+      segEndTime = Number.POSITIVE_INFINITY;
+    }
 
-    if (time >= firstTime && time <= lastTime) {
+    // Check if time falls within this segment's range
+    if (time >= segStartTime && (s === segments.length - 1 ? time >= segStartTime : time < segEndTime)) {
       segmentIndex = s;
       // Find the interval within the segment
       for (let i = 0; i < segment.points.length - 1; i++) {
@@ -215,10 +229,12 @@ function pchipInterpolateAt(segments, sortedPoints, time) {
         }
       }
       break;
-    } else if (time < firstTime && s === 0) {
-      // Before first segment
-      return segment.points[0].reward;
     }
+  }
+
+  // Before first segment
+  if (segmentIndex === -1 && time < segments[0].points[0].time) {
+    return segments[0].points[0].reward;
   }
 
   // After last segment
@@ -362,8 +378,16 @@ function evaluateCubicSpline(spline, points, time) {
 
   // Handle step transitions
   for (let i = 1; i <= n; i++) {
-    if (points[i].type === "step" && time >= points[i - 1].time && time < points[i].time) {
-      return points[i - 1].reward;
+    // If current point is a step point
+    if (points[i].type === "step") {
+      // Before the step: hold previous value
+      if (time >= points[i - 1].time && time < points[i].time) {
+        return points[i - 1].reward;
+      }
+      // At or after the step: use step value
+      if (time >= points[i].time && (i === n || time < points[i + 1].time)) {
+        return points[i].reward;
+      }
     }
   }
 

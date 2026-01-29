@@ -69,6 +69,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   const isHoveringRef = useRef(false);
   const isMouseMovingRef = useRef(false); // Track if mouse is actively moving
   const mouseMoveTimeoutRef = useRef(null); // Timeout to detect when mouse stops moving
+  const wasHoveringBeforeModalRef = useRef(false); // Track hover state before modal opens
 
   // Get data directly from region
   const controlPoints = region?.controlPoints || [];
@@ -167,6 +168,9 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       console.warn("[VideoRewardAnnotation] No region available, cannot toggle keypoint");
       return;
     }
+    
+    // Save hover state before opening modal
+    wasHoveringBeforeModalRef.current = isHoveringRef.current;
     
     const currentTimeValue = frameToTime(frameToUse);
     const threshold = 0.1; // 100ms threshold
@@ -437,7 +441,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     }
   }, [controlPoints, validDuration, validFps, fitMethod, autoFit, region]);
 
-  // Prevent scroll when modal is open
+  // Prevent scroll when modal is open and manage hotkey scope
   useEffect(() => {
     if (isEditModalOpen) {
       // Save current scroll position
@@ -447,6 +451,8 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       document.body.style.position = "fixed";
       document.body.style.top = `-${scrollPositionRef.current}px`;
       document.body.style.width = "100%";
+      // Disable hotkeys while modal is open
+      Hotkey.setScope("__none__");
     } else {
       // Restore body scroll
       document.body.style.overflow = "";
@@ -455,6 +461,19 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       document.body.style.width = "";
       // Restore scroll position
       window.scrollTo(0, scrollPositionRef.current);
+      
+      // Restore hotkey scope based on saved hover state
+      if (wasHoveringBeforeModalRef.current) {
+        console.log("[VideoRewardAnnotation] Modal closed, restoring REWARD_ANNOTATION_SCOPE");
+        Hotkey.setScope(REWARD_ANNOTATION_SCOPE);
+        // Restore the hover ref as well
+        isHoveringRef.current = true;
+      } else {
+        console.log("[VideoRewardAnnotation] Modal closed, restoring DEFAULT_SCOPE");
+        Hotkey.setScope(Hotkey.DEFAULT_SCOPE);
+      }
+      // Reset the saved state
+      wasHoveringBeforeModalRef.current = false;
     }
 
     return () => {
@@ -689,6 +708,9 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     const time = xToTime(x);
     const reward = yToReward(y);
 
+    // Save hover state before opening modal
+    wasHoveringBeforeModalRef.current = isHoveringRef.current;
+
     // Check if clicking near existing point
     const clickThreshold = 10;
     const clickedPointIndex = controlPoints.findIndex((pt) => {
@@ -763,6 +785,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   // Handle canvas mouse enter - activate scoped hotkeys
   const handleCanvasMouseEnter = () => {
     console.log("[VideoRewardAnnotation] Mouse entered, activating scoped hotkeys");
+    isHoveringRef.current = true;
     Hotkey.setScope(REWARD_ANNOTATION_SCOPE);
   };
 

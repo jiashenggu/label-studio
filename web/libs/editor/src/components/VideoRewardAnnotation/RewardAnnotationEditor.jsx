@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { observer } from "mobx-react";
 import { fitCurve, clamp } from "./curveFitting";
+import { useHotkey } from "../../hooks/useHotkey";
 import "./RewardAnnotationEditor.scss";
 
 // Stage colors for background (pastel)
@@ -48,8 +49,8 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
 
   // UI State only (not data state)
   const [selectedPointIndex, setSelectedPointIndex] = useState(-1);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [hoverTime, setHoverTime] = useState(0);
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [hoverFrame, setHoverFrame] = useState(0);
   const [isPaused, setIsPaused] = useState(true);
   const [autoFit, setAutoFit] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -74,6 +75,14 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   // Validate duration and fps
   const validDuration = !isNaN(duration) && duration > 0 ? duration : 60;
   const validFps = !isNaN(fps) && fps > 0 ? fps : 30;
+
+  // Helper functions to convert between frames and time
+  const frameToTime = useCallback((frame) => frame / validFps, [validFps]);
+  const timeToFrame = useCallback((time) => Math.floor(time * validFps), [validFps]);
+
+  // Get current time from frame
+  const currentTime = frameToTime(currentFrame);
+  const hoverTime = frameToTime(hoverFrame);
 
   // Canvas helpers
   const getPlotArea = useCallback(() => {
@@ -117,6 +126,66 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     },
     [numStages, getPlotArea],
   );
+
+  // Hotkey handlers for frame navigation
+  const handleStepBackward = useCallback(() => {
+    if (!videoObject?.ref?.current) return;
+    const videoEl = videoObject.ref.current;
+    const newFrame = Math.max(0, currentFrame - 1);
+    const newTime = frameToTime(newFrame);
+    videoEl.currentTime = newTime;
+    setCurrentFrame(newFrame);
+    setHoverFrame(newFrame);
+  }, [videoObject, currentFrame, frameToTime]);
+
+  const handleStepForward = useCallback(() => {
+    if (!videoObject?.ref?.current) return;
+    const videoEl = videoObject.ref.current;
+    const maxFrame = Math.floor(validDuration * validFps);
+    const newFrame = Math.min(maxFrame, currentFrame + 1);
+    const newTime = frameToTime(newFrame);
+    videoEl.currentTime = newTime;
+    setCurrentFrame(newFrame);
+    setHoverFrame(newFrame);
+  }, [videoObject, currentFrame, validDuration, validFps, frameToTime]);
+
+  const handleKeypointToggle = useCallback(() => {
+    if (!region) return;
+    
+    const currentTimeValue = frameToTime(currentFrame);
+    const threshold = 0.1; // 100ms threshold
+    
+    // Check if there's a control point at or near the current time
+    const pointIndex = controlPoints.findIndex(
+      (pt) => Math.abs(pt.time - currentTimeValue) < threshold
+    );
+    
+    if (pointIndex >= 0) {
+      // Remove the point at current frame
+      const newPoints = controlPoints.filter((_, i) => i !== pointIndex);
+      region.setControlPoints(newPoints);
+      setSelectedPointIndex(-1);
+    } else {
+      // Add a new point at current frame
+      // Calculate reward at current position based on curve or default to middle
+      let reward = numStages / 2;
+      if (denseRewards.length > currentFrame) {
+        reward = denseRewards[currentFrame];
+      }
+      
+      const newPoint = {
+        time: currentTimeValue,
+        reward: reward,
+        type: "normal",
+      };
+      region.setControlPoints([...controlPoints, newPoint]);
+    }
+  }, [region, currentFrame, frameToTime, controlPoints, numStages, denseRewards]);
+
+  // Attach hotkeys
+  useHotkey("media:step-backward", handleStepBackward);
+  useHotkey("media:step-forward", handleStepForward);
+  useHotkey("video:keypoint-toggle", handleKeypointToggle);
 
   // Initialize auto-boundary checkboxes based on existing control points (run once on mount)
   useEffect(() => {
@@ -190,69 +259,78 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
 
     const handleTimeUpdate = () => {
       const newTime = videoEl.currentTime || 0;
+      const newFrame = timeToFrame(newTime);
       const paused = videoEl.paused;
       console.log(
         "[VideoRewardAnnotation] timeupdate event:",
         newTime,
+        "frame:",
+        newFrame,
         "paused:",
         paused,
         "isHovering:",
         isHoveringRef.current,
       );
-      setCurrentTime(newTime);
+      setCurrentFrame(newFrame);
       setIsPaused(paused);
 
-      // Always update hover time when not actively hovering on RewardAnnotation canvas
+      // Always update hover frame when not actively hovering on RewardAnnotation canvas
       // This ensures the indicator updates when hovering on VideoRectangle timeline
       if (!isHoveringRef.current) {
-        console.log("[VideoRewardAnnotation] Updating hoverTime to:", newTime);
-        setHoverTime(newTime);
+        console.log("[VideoRewardAnnotation] Updating hoverFrame to:", newFrame);
+        setHoverFrame(newFrame);
       }
     };
 
     const handleSeeking = () => {
       // Fired when seeking starts
       const newTime = videoEl.currentTime || 0;
+      const newFrame = timeToFrame(newTime);
       const paused = videoEl.paused;
       console.log(
         "[VideoRewardAnnotation] seeking event:",
         newTime,
+        "frame:",
+        newFrame,
         "paused:",
         paused,
         "isHovering:",
         isHoveringRef.current,
       );
-      setCurrentTime(newTime);
+      setCurrentFrame(newFrame);
       setIsPaused(paused);
 
-      // Always update hover time when not actively hovering on RewardAnnotation canvas
+      // Always update hover frame when not actively hovering on RewardAnnotation canvas
       // This ensures the indicator updates when hovering on VideoRectangle timeline
       if (!isHoveringRef.current) {
-        console.log("[VideoRewardAnnotation] Updating hoverTime from seeking to:", newTime);
-        setHoverTime(newTime);
+        console.log("[VideoRewardAnnotation] Updating hoverFrame from seeking to:", newFrame);
+        setHoverFrame(newFrame);
       }
     };
 
     const handleSeeked = () => {
       // Fired immediately after a seek operation completes
       const newTime = videoEl.currentTime || 0;
+      const newFrame = timeToFrame(newTime);
       const paused = videoEl.paused;
       console.log(
         "[VideoRewardAnnotation] seeked event:",
         newTime,
+        "frame:",
+        newFrame,
         "paused:",
         paused,
         "isHovering:",
         isHoveringRef.current,
       );
-      setCurrentTime(newTime);
+      setCurrentFrame(newFrame);
       setIsPaused(paused);
 
-      // Always update hover time when not actively hovering on RewardAnnotation canvas
+      // Always update hover frame when not actively hovering on RewardAnnotation canvas
       // This ensures the indicator updates when hovering on VideoRectangle timeline
       if (!isHoveringRef.current) {
-        console.log("[VideoRewardAnnotation] Updating hoverTime from seeked to:", newTime);
-        setHoverTime(newTime);
+        console.log("[VideoRewardAnnotation] Updating hoverFrame from seeked to:", newFrame);
+        setHoverFrame(newFrame);
       }
     };
 
@@ -264,9 +342,10 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     const handlePause = () => {
       console.log("[VideoRewardAnnotation] pause event");
       setIsPaused(true);
-      // When paused, sync hoverTime with currentTime if not actively hovering
+      // When paused, sync hoverFrame with currentFrame if not actively hovering
       if (!isHoveringRef.current) {
-        setHoverTime(videoEl.currentTime || 0);
+        const newFrame = timeToFrame(videoEl.currentTime || 0);
+        setHoverFrame(newFrame);
       }
     };
 
@@ -277,10 +356,12 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     videoEl.addEventListener("pause", handlePause);
 
     // Initial sync
-    setCurrentTime(videoEl.currentTime || 0);
+    const initialTime = videoEl.currentTime || 0;
+    const initialFrame = timeToFrame(initialTime);
+    setCurrentFrame(initialFrame);
     setIsPaused(videoEl.paused);
     if (!isHoveringRef.current) {
-      setHoverTime(videoEl.currentTime || 0);
+      setHoverFrame(initialFrame);
     }
 
     return () => {
@@ -292,7 +373,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
         videoEl.removeEventListener("pause", handlePause);
       }
     };
-  }, [videoObject]);
+  }, [videoObject, timeToFrame]);
 
   // Fit curve - directly update region
   useEffect(() => {
@@ -484,7 +565,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       }
     });
 
-    // Draw current time indicator (green dashed line)
+    // Draw current time indicator (green dashed line) - playback position
     const currentX = timeToX(currentTime);
     ctx.strokeStyle = "#4ade80";
     ctx.lineWidth = 2;
@@ -495,39 +576,54 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Draw hover time indicator (orange solid line)
+    // Draw hover frame indicator (blue solid line with shadow, like VideoRectangle)
     // Show when video is paused to indicate the current seek position
     // This works for both hovering on RewardAnnotation canvas AND VideoRectangle timeline
     console.log(
       "[VideoRewardAnnotation] Drawing canvas. isPaused:",
       isPaused,
+      "hoverFrame:",
+      hoverFrame,
+      "currentFrame:",
+      currentFrame,
       "hoverTime:",
       hoverTime,
-      "currentTime:",
-      currentTime,
     );
 
-    if (isPaused) {
-      // When paused, show orange indicator at the hover/seek position
+    if (isPaused && hoverFrame !== currentFrame) {
+      // When paused and hovering, show blue indicator at the hover/seek position
       const hoverX = timeToX(hoverTime);
-      console.log("[VideoRewardAnnotation] Drawing orange indicator at x:", hoverX, "for time:", hoverTime);
-      ctx.strokeStyle = "rgba(251, 191, 36, 0.9)";
-      ctx.lineWidth = 2;
+      console.log("[VideoRewardAnnotation] Drawing blue indicator at x:", hoverX, "for frame:", hoverFrame);
+      
+      // Draw gradient shadow effect like VideoRectangle
+      const gradient = ctx.createLinearGradient(hoverX - 10, 0, hoverX + 10, 0);
+      gradient.addColorStop(0, "rgba(59, 130, 246, 0)");
+      gradient.addColorStop(0.5, "rgba(59, 130, 246, 0.3)");
+      gradient.addColorStop(1, "rgba(59, 130, 246, 0)");
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(hoverX - 10, area.y, 20, area.height);
+      
+      // Draw main indicator line
+      ctx.strokeStyle = "rgba(59, 130, 246, 0.9)";
+      ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.moveTo(hoverX, area.y);
       ctx.lineTo(hoverX, area.y + area.height);
       ctx.stroke();
 
-      // Draw time label at top
-      ctx.fillStyle = "rgba(251, 191, 36, 1)";
+      // Draw frame label at top
+      ctx.fillStyle = "rgba(59, 130, 246, 1)";
       ctx.font = "bold 12px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`${hoverTime.toFixed(2)}s`, hoverX, area.y - 10);
+      ctx.fillText(`Frame ${hoverFrame} (${hoverTime.toFixed(2)}s)`, hoverX, area.y - 10);
     }
   }, [
     controlPoints,
     denseRewards,
     selectedPointIndex,
+    currentFrame,
+    hoverFrame,
     currentTime,
     hoverTime,
     isPaused,
@@ -594,8 +690,9 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
     // Only update if mouse is within plot area
     if (x >= area.x && x <= area.x + area.width) {
       const time = xToTime(x);
+      const frame = timeToFrame(time);
       isHoveringRef.current = true;
-      setHoverTime(time);
+      setHoverFrame(frame);
 
       // Seek video to this time
       if (videoObject?.ref?.current && typeof videoObject.ref.current.currentTime !== "undefined") {
@@ -611,7 +708,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
   // Handle canvas mouse leave - reset hover indicator
   const handleCanvasMouseLeave = () => {
     isHoveringRef.current = false;
-    setHoverTime(currentTime);
+    setHoverFrame(currentFrame);
   };
 
   // Apply edit from modal - directly update region
@@ -714,13 +811,6 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
       <div className="reward-editor">
         <div className="reward-editor__header">
           <h3>Reward Curve Annotation</h3>
-          <div className="reward-editor__info">
-            <span>Duration: {validDuration.toFixed(1)}s</span>
-            <span>|</span>
-            <span>Stages: {numStages}</span>
-            <span>|</span>
-            <span>Current: {currentTime.toFixed(2)}s</span>
-          </div>
         </div>
 
         <div className="reward-editor__content">
@@ -796,7 +886,7 @@ const RewardAnnotationEditor = observer(({ item, videoObject, numStages, stageNa
             <div className="reward-editor__legend">
               <span>
                 🔴 Click to add points • ⚡ Yellow = Step transition • 🟢 Green = Selected • Auto-boundary points can be
-                edited
+                edited • ⬅️➡️ = Frame navigation • ⏎ = Toggle control point
               </span>
             </div>
           </div>

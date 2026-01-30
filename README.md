@@ -269,3 +269,16 @@ LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true LABEL_STUDIO_LOCAL_FILES_DOCUMENT_
 If you want to use file path instead of randomly generated path in /data/upload, check docs/source/guide/storage.md
 
 If you want to use HMR to develop, access port 8010 to see the HMR
+
+
+## Loading Annotation JSON Files
+
+To import annotation JSON files from another Label Studio instance, use the `convert_completed_by.py` script to set all user IDs to 1. This prevents Validation error during import.
+
+```bash
+python convert_completed_by.py your_exported_annotation.json
+```
+
+This script generates new tasks containing the imported annotations; it does not overwrite your existing tasks.
+
+If your data to annotate is stored on S3, make sure your project is configured with the appropriate cloud storage connection.

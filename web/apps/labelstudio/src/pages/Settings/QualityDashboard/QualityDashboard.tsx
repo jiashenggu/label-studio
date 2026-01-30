@@ -1,4 +1,5 @@
-import { FC, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FC } from "react";
 import { useAPI } from "../../../providers/ApiProvider";
 import { useProject } from "../../../providers/ProjectProvider";
 import { Block, Elem } from "../../../utils/bem";

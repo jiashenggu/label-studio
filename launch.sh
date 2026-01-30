@@ -21,8 +21,8 @@ FRAME_SERVER_PORT=8765
 DATASET_DIR="${DATASET_DIR:-}"
 
 # API keys for different environments
-API_KEY_PROD="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6ODA3MDYzNDg2MCwiaWF0IjoxNzYzNDM0ODYwLCJqdGkiOiJkMzQ3MDlkMWY4MDk0YTg0YmUwMGNhYTAxOGQwODVmMyIsInVzZXJfaWQiOiI0In0.OT8fXRdhod6MOWJl6UUS_m1wIOMoPj_KkTxAR8Mz4AE"
-API_KEY_DEV="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoicmVmcmVzaCIsImV4cCI6ODA3NjYxOTg4OCwiaWF0IjoxNzY5NDE5ODg4LCJqdGkiOiJlMzllNDdmOTU1ODQ0NDllOTc5YTBiMjRkMWRjZGNiYSIsInVzZXJfaWQiOiIxIn0.JwaxWqNQ7VxeS0rbLBcGAWstG_vz5kFTxDt3VgEMFWk"
+API_KEY_PROD=""
+API_KEY_DEV=""
 
 # AWS/S3 credentials for lerobot mode
 export AWS_ACCESS_KEY_ID="jiashenggu:AUTH_team-gear"
@@ -135,7 +135,7 @@ check_label_studio() {
 start_docker_label_studio() {
     echo "🧹 Cleaning up existing containers..."
     sudo docker rm -f ls 2>/dev/null || true
-    
+    sudo docker pull scruple/label-studio:latest
     echo "🚀 Starting Label Studio (Docker)..."
     sudo docker run -d \
         -u $(id -u):$(id -g) \

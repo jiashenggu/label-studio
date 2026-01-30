@@ -2,9 +2,9 @@ import { Select, Input } from 'antd';
 import { runInAction } from 'mobx';
 import { observer } from 'mobx-react';
 import type { Instance } from 'mobx-state-tree';
-import { VideoRegion } from '../../../regions/VideoRegion';
+import type { VideoRegion } from '../../../regions/VideoRegion';
 import styles from './TimelineRegionEditor.module.scss';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type FC } from 'react';
 
 type VideoRegionModel = Instance<typeof VideoRegion>;
 const { Option } = Select;
@@ -12,10 +12,25 @@ const { Option } = Select;
 export const VideoRegionEditor = observer(
   ({ region }: { region: VideoRegionModel }) => {
     const { sequence } = region;
-    const optionList = region.object.optionList.map((o) => ({
-      value: o.value,
-      label: o.label,
-    }));
+    
+    // Get the labels assigned to this region
+    const labelValues = region.labels || [];
+    
+    // Filter options based on region's labels
+    const optionList = region.object.optionList
+      .filter((o: any) => {
+        // If option has whenLabelValue, only show if that label is selected
+        if (o.whenLabelValue) {
+          const allowedLabels = o.whenLabelValue.split(',').map((l: string) => l.trim());
+          return labelValues.some((lv: string) => allowedLabels.includes(lv));
+        }
+        // If no whenLabelValue, always show the option
+        return true;
+      })
+      .map((o: any) => ({
+        value: o.value,
+        label: o.label,
+      }));
 
     const updateFrameAt = (index: number, newFrame: number) => {
       runInAction(() => {

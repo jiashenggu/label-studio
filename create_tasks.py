@@ -507,7 +507,7 @@ def main():
     print("=" * 60)
     print()
     print("🌐 Access your project:")
-    print(f"   {cfg.base_url}projects/{project.id}/")
+    print(f"   {cfg.base_url}/projects/{project.id}/")
     print()
     print("📊 Statistics:")
     print(f"   - Total tasks: {task_count}")

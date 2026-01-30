@@ -123,7 +123,15 @@ def create_label_config(fps: float = 15.0) -> str:
             sync="ego_view"
             framerate="{fps}"
             timelineHeight="250"
-            height="1"/>
+            height="1"
+            resolver='[
+                {{"value": "object adjustment", "label": "不完美：位置调整", "whenLabelValue": "Suboptimal"}},
+                {{"value": "passive deviation", "label": "不完美：被动偏离", "whenLabelValue": "Suboptimal"}},
+                {{"value": "object dropped", "label": "失败：物体掉落", "whenLabelValue": "Failure"}},
+                {{"value": "placement failure", "label": "失败：放置错误", "whenLabelValue": "Failure"}}
+                {{"value": "minor keyframes", "label": "产生小进展的关键帧", "whenLabelValue": "keyframes"}},
+                {{"value": "major keyframes", "label": "产生巨大进展的关键帧", "whenLabelValue": "keyframes"}}
+            ]'/>
         
         <VideoRectangle name="box"
                         toName="ego_view"
@@ -131,10 +139,10 @@ def create_label_config(fps: float = 15.0) -> str:
         
         <Labels name="videoLabels"
                 toName="ego_view">
-            <Label value="Subgoal"    background="#944BFF"/>
-            <Label value="Suboptimal" background="#FFA500"/>
-            <Label value="Failure"    background="#FF0000"/>
-            <Label value="Success"    background="#00FF00"/>
+            <Label value="subgoal"    background="#944BFF"/>
+            <Label value="suboptimal" background="#FFA500"/>
+            <Label value="failure"    background="#FF0000"/>
+            <Label value="keyframes"    background="#000000"/>
         </Labels>
         
         <TextArea name="notes"

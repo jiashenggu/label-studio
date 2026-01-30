@@ -482,7 +482,7 @@ def main():
         print("📝 Creating new project...")
         label_config = create_label_config(cfg.fps)
 
-        project_name = cfg.project_name or "Video Annotation Project"
+        project_name = cfg.project_name or cfg.dataset_dir.rstrip("/").split("/")[-1][:50]
         project = client.projects.create(title=project_name, label_config=label_config)
         print(f"✓ Created project: {project.title} (ID: {project.id})")
     else:

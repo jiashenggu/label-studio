@@ -94,8 +94,9 @@ export const ExportPage = () => {
           },
         })
         .then((formats) => {
-          setAvailableFormats(formats);
-          setCurrentFormat(formats[0]?.name);
+          const enabledFormats = formats.filter((format) => !format.disabled);
+          setAvailableFormats(enabledFormats);
+          setCurrentFormat(enabledFormats[0]?.name);
         });
     }
   }, [pageParams]);
@@ -154,10 +155,10 @@ const FormatInfo = ({ availableFormats, selected, onClick }) => {
             key={format.name}
             name="item"
             mod={{
-              active: !format.disabled,
+              active: true,
               selected: format.name === selected,
             }}
-            onClick={!format.disabled ? () => onClick(format) : null}
+            onClick={() => onClick(format)}
           >
             <Elem name="name">
               {format.title}

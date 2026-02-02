@@ -47,6 +47,13 @@ export const VideoRegionEditor = observer(
       });
     };
 
+    const updateScoreAt = (index: number, newScore: number | undefined) => {
+      runInAction(() => {
+        const frame = sequence[index].frame;
+        region.updateKeypointScore(frame, newScore);
+      });
+    };
+
     return (
       <div className={styles.container}>
         <SequenceFrames
@@ -54,34 +61,31 @@ export const VideoRegionEditor = observer(
           optionList={optionList}
           onUpdateFrame={updateFrameAt}
           onUpdateOptions={updateOptionsAt}
+          onUpdateScore={updateScoreAt}
         />
       </div>
     );
   }
 );
 
-/* ---------------- 子组件 ---------------- */
 
 
 interface SeqProps {
-  sequence: { frame: number; enabled?: boolean; options?: string[] }[];
+  sequence: { frame: number; enabled?: boolean; options?: string[]; score?: number }[];
   optionList: { value: string; label: string }[];
   onUpdateFrame: (index: number, newFrame: number) => void;
   onUpdateOptions: (index: number, newOptions: string[]) => void;
+  onUpdateScore: (index: number, newScore: number | undefined) => void;
 }
 
 export const SequenceFrames: React.FC<SeqProps> = observer(
-  ({ sequence, optionList, onUpdateOptions }) => {
-    /* 存每一行自定义文本：{ [index]: string } */
+  ({ sequence, optionList, onUpdateOptions, onUpdateScore }) => {
     const [otherText, setOtherText] = useState<Record<number, string>>({});
 
-        /* 记录哪一行需要自动聚焦 */
     const [needFocus, setNeedFocus] = useState<number | null>(null);
     const otherInputRef = useRef<HTMLInputElement>(null);
 
-    /* 当选到 __other__ 时，标记需要聚焦 */
 
-    /* 统一构造“下拉框选项”：正常选项 + 一个 other */
     const buildOptions = (idx: number) => {
       const base = optionList.map((o) => (
         <Option key={o.value} value={o.value}>
@@ -96,13 +100,12 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
       return base;
     };
 
-    /* 处理 Select 变化 */
+
     const handleChange = (index: number, next: string[]) => {
       const old = sequence[index].options || [];
       const hadOther = old.includes('__other__');
       const hasOther = next.includes('__other__');
 
-      /* 如果取消了 other，把对应的自定义文本也清掉 */
       if (hadOther && !hasOther) {
         setOtherText((o) => {
           const clone = { ...o };
@@ -112,7 +115,6 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
         
       }
 
-      /* 如果新选了 other，先塞一个空字符串占位，方便下面输入框受控 */
       if (!hadOther && hasOther) {
         setOtherText((o) => ({ ...o, [index]: '' }));
         setNeedFocus(index); 
@@ -121,27 +123,36 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
       onUpdateOptions(index, next);
     };
 
-        /* 渲染完成后聚焦，然后立即把标记清掉 */
     useEffect(() => {
       if (needFocus !== null) {
-        otherInputRef.current?.focus();   // ← 直接聚焦原生元素
+        otherInputRef.current?.focus();
         setNeedFocus(null);
       }
     }, [needFocus]);
 
-    /* 自定义文本输入完，把 __other__ 替换成真实文本 */
     const handleOtherInputBlur = (index: number) => {
       const text = (otherText[index] || '').trim();
-      if (!text) return; // 空文本不替换
+      if (!text) return;
       const oldOpts = sequence[index].options || [];
       const newOpts = oldOpts.map((v) => (v === '__other__' ? text : v));
       onUpdateOptions(index, newOpts);
-      /* 同时把 otherText 清掉，避免下次再看到输入框 */
       setOtherText((o) => {
         const clone = { ...o };
         delete clone[index];
         return clone;
       });
+    };
+
+    const handleScoreChange = (index: number, value: string) => {
+      const trimmed = value.trim();
+      if (trimmed === '') {
+        onUpdateScore(index, undefined);
+      } else {
+        const num = Number.parseFloat(trimmed);
+        if (!Number.isNaN(num)) {
+          onUpdateScore(index, num);
+        }
+      }
     };
 
     return (
@@ -179,7 +190,18 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
                 </Select>
               </label>
 
-              {/* 其他输入框 */}
+              <label className={styles.label}>
+                <span className={styles.labelText}>score</span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  className={styles.input}
+                  placeholder="Enter score"
+                  value={item.score ?? ''}
+                  onChange={(e) => handleScoreChange(idx, e.target.value)}
+                />
+              </label>
+
               {showOtherInput && (
                 <div style={{ marginTop: 4 }}>
                   <Input

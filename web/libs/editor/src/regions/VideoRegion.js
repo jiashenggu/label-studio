@@ -44,6 +44,11 @@ const Model = types
         kp.frame === frame ? { ...kp, options } : kp
       );
     },
+    updateKeypointScore(frame, score) {
+      self.sequence = self.sequence.map(kp =>
+        kp.frame === frame ? { ...kp, score } : kp
+      );
+    },
     updateShape() {
       throw new Error("Method updateShape must be implemented on a shape level");
     },

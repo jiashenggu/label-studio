@@ -129,8 +129,8 @@ def create_label_config(fps: float = 30.0) -> str:
                 {{"value": "passive deviation", "label": "不完美：被动偏离", "whenLabelValue": "suboptimal"}},
                 {{"value": "object dropped", "label": "失败：物体掉落", "whenLabelValue": "failure"}},
                 {{"value": "placement failure", "label": "失败：放置错误", "whenLabelValue": "failure"}},
-                {{"value": "minor keyframes", "label": "产生小进展的关键帧", "whenLabelValue": "subgoal"}},
-                {{"value": "major keyframes", "label": "产生巨大进展的关键帧", "whenLabelValue": "subgoal"}}
+                {{"value": "minor keyframes", "label": "完成小目标的关键帧", "whenLabelValue": "subgoal"}},
+                {{"value": "major keyframes", "label": "完成大目标的关键帧", "whenLabelValue": "subgoal"}}
             ]'/>
         
         <VideoRectangle name="box"
@@ -489,7 +489,7 @@ def main():
         print("📝 Creating new project...")
         label_config = create_label_config(cfg.fps)
 
-        project_name = cfg.project_name or cfg.dataset_dir.rstrip("/").split("/")[-1][:50]
+        project_name = cfg.project_name or cfg.dataset_dir.rstrip("/").split("/")[-1].split(".")[-1][:50]
         project = client.projects.create(title=project_name, label_config=label_config)
         print(f"✓ Created project: {project.title} (ID: {project.id})")
     else:

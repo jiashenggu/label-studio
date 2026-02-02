@@ -41,7 +41,7 @@ class Config:
     """Frame rate for video playback."""
 
 
-def create_label_config(fps: float = 15.0) -> str:
+def create_label_config(fps: float = 30.0) -> str:
     """Generate Label Studio config for multi-view video annotation."""
     return f"""
 <View>
@@ -125,12 +125,12 @@ def create_label_config(fps: float = 15.0) -> str:
             timelineHeight="250"
             height="1"
             resolver='[
-                {{"value": "object adjustment", "label": "不完美：位置调整", "whenLabelValue": "Suboptimal"}},
-                {{"value": "passive deviation", "label": "不完美：被动偏离", "whenLabelValue": "Suboptimal"}},
-                {{"value": "object dropped", "label": "失败：物体掉落", "whenLabelValue": "Failure"}},
-                {{"value": "placement failure", "label": "失败：放置错误", "whenLabelValue": "Failure"}}
-                {{"value": "minor keyframes", "label": "产生小进展的关键帧", "whenLabelValue": "keyframes"}},
-                {{"value": "major keyframes", "label": "产生巨大进展的关键帧", "whenLabelValue": "keyframes"}}
+                {{"value": "object adjustment", "label": "不完美：位置调整", "whenLabelValue": "suboptimal"}},
+                {{"value": "passive deviation", "label": "不完美：被动偏离", "whenLabelValue": "suboptimal"}},
+                {{"value": "object dropped", "label": "失败：物体掉落", "whenLabelValue": "failure"}},
+                {{"value": "placement failure", "label": "失败：放置错误", "whenLabelValue": "failure"}},
+                {{"value": "minor keyframes", "label": "产生小进展的关键帧", "whenLabelValue": "subgoal"}},
+                {{"value": "major keyframes", "label": "产生巨大进展的关键帧", "whenLabelValue": "subgoal"}}
             ]'/>
         
         <VideoRectangle name="box"
@@ -142,7 +142,6 @@ def create_label_config(fps: float = 15.0) -> str:
             <Label value="subgoal"    background="#944BFF"/>
             <Label value="suboptimal" background="#FFA500"/>
             <Label value="failure"    background="#FF0000"/>
-            <Label value="keyframes"    background="#000000"/>
         </Labels>
         
         <TextArea name="notes"

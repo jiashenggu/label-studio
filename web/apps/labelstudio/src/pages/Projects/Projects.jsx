@@ -11,6 +11,7 @@ import { CreateProject } from "../CreateProject/CreateProject";
 import { DataManagerPage } from "../DataManager/DataManager";
 import { SettingsPage } from "../Settings";
 import { EmptyProjectsList, ProjectsList } from "./ProjectsList";
+import { ProjectsFilter } from "./ProjectsFilter";
 import { useAbortController, useUpdatePageTitle } from "@humansignal/core";
 import "./Projects.scss";
 
@@ -27,6 +28,7 @@ export const ProjectsPage = () => {
   const [networkState, setNetworkState] = React.useState(null);
   const [currentPage, setCurrentPage] = useState(getCurrentPage());
   const [totalItems, setTotalItems] = useState(1);
+  const [filters, setFilters] = useState({});
   const setContextProps = useContextProps();
 
   useUpdatePageTitle("Projects");
@@ -53,6 +55,18 @@ export const ProjectsPage = () => {
       "is_published",
       "assignment_settings",
     ].join(",");
+
+    // Apply filters
+    if (filters.title) {
+      requestParams.title = filters.title;
+    }
+    if (filters.created_after) {
+      requestParams.created_after = filters.created_after;
+    }
+
+    console.log("=== FETCHING PROJECTS ===");
+    console.log("Full request params:", JSON.stringify(requestParams, null, 2));
+    console.log("Filters state:", JSON.stringify(filters, null, 2));
 
     const data = await api.callApi("projects", {
       params: requestParams,
@@ -105,9 +119,14 @@ export const ProjectsPage = () => {
     await fetchProjects(page, pageSize);
   };
 
+  const handleFilterChange = (newFilters) => {
+    setFilters(newFilters);
+    setCurrentPage(1); // Reset to first page when filters change
+  };
+
   React.useEffect(() => {
     fetchProjects();
-  }, []);
+  }, [filters]);
 
   React.useEffect(() => {
     // there is a nice page with Create button when list is empty
@@ -122,6 +141,7 @@ export const ProjectsPage = () => {
           <Spinner size={64} />
         </Elem>
         <Elem name="content" case="loaded">
+          <ProjectsFilter onFilterChange={handleFilterChange} />
           {projectsList.length ? (
             <ProjectsList
               projects={projectsList}

@@ -25,8 +25,8 @@ API_KEY_PROD=""
 API_KEY_DEV=""
 
 # AWS/S3 credentials for lerobot mode
-export AWS_ACCESS_KEY_ID="jiashenggu:AUTH_team-gear"
-export AWS_SECRET_ACCESS_KEY="a950a4265f9d79628dc188ebb3a0eb4d"
+export AWS_ACCESS_KEY_ID=""
+export AWS_SECRET_ACCESS_KEY=""
 export AWS_DEFAULT_REGION="us-east-1"
 export AWS_ENDPOINT_URL="https://pdx.s8k.io"
 export S3_ENDPOINT_URL="https://pdx.s8k.io"

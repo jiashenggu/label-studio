@@ -36,7 +36,7 @@ export S3_ENDPOINT_URL="https://pdx.s8k.io"
 # =============================================================================
 
 MODE="lerobot"
-FPS=15.0
+FPS=30.0
 MAX_EPISODES=""
 
 while [[ $# -gt 0 ]]; do

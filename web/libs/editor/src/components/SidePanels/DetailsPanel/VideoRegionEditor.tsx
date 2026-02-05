@@ -190,18 +190,6 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
                 </Select>
               </label>
 
-              <label className={styles.label}>
-                <span className={styles.labelText}>score</span>
-                <Input
-                  type="number"
-                  step="0.01"
-                  className={styles.input}
-                  placeholder="Enter score"
-                  value={item.score ?? ''}
-                  onChange={(e) => handleScoreChange(idx, e.target.value)}
-                />
-              </label>
-
               {showOtherInput && (
                 <div style={{ marginTop: 4 }}>
                   <Input
@@ -217,6 +205,18 @@ export const SequenceFrames: React.FC<SeqProps> = observer(
                   />
                 </div>
               )}
+
+              <label className={styles.label}>
+                <span className={styles.labelText}>score</span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  className={styles.input}
+                  placeholder="Enter score"
+                  value={item.score ?? ''}
+                  onChange={(e) => handleScoreChange(idx, e.target.value)}
+                />
+              </label>
             </div>
           );
         })}

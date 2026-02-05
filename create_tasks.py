@@ -126,9 +126,11 @@ def create_label_config(fps: float = 30.0) -> str:
             height="1"
             resolver='[
                 {{"value": "object adjustment", "label": "不完美：位置调整", "whenLabelValue": "suboptimal"}},
-                {{"value": "passive deviation", "label": "不完美：被动偏离", "whenLabelValue": "suboptimal"}},
+                {{"value": "deviation", "label": "不完美：被动偏离", "whenLabelValue": "suboptimal"}},
+                {{"value": "object dropped", "label": "不完美：物体掉落", "whenLabelValue": "suboptimal"}},
+                {{"value": "object adjustment", "label": "失败：位置调整", "whenLabelValue": "failure"}},
+                {{"value": "deviation", "label": "失败：被动偏离", "whenLabelValue": "failure"}},
                 {{"value": "object dropped", "label": "失败：物体掉落", "whenLabelValue": "failure"}},
-                {{"value": "placement failure", "label": "失败：放置错误", "whenLabelValue": "failure"}},
                 {{"value": "minor keyframes", "label": "完成小目标的关键帧", "whenLabelValue": "subgoal"}},
                 {{"value": "major keyframes", "label": "完成大目标的关键帧", "whenLabelValue": "subgoal"}}
             ]'/>

@@ -3,6 +3,8 @@
 # Launch Label Studio with optional frame server for image sequence support
 #
 # Usage:
+#   ./launch.sh                                 # Docker only (no dataset processing)
+#   ./launch.sh --prod                          # Docker only, production mode
 #   ./launch.sh --dataset-dir PATH              # LeRobot mode (S3 videos)
 #   ./launch.sh --dataset-dir PATH --packds     # PackDS mode (LanceDB frames)
 #   ./launch.sh --prod --dataset-dir PATH       # Use production port (8080)
@@ -73,7 +75,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: ./launch.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --dataset-dir PATH    Dataset directory (required)"
+            echo "  --dataset-dir PATH    Dataset directory (optional)"
+            echo "                        - If omitted, only docker operations will be performed"
             echo "                        - lerobot: S3 path (s3://bucket/path) or local path"
             echo "                        - packds: Path to LanceDB database"
             echo "  --packds              Use PackDS mode (LanceDB frame sequences)"
@@ -84,6 +87,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --max-episodes N      Maximum episodes to import (packds only)"
             echo ""
             echo "Examples:"
+            echo "  ./launch.sh                                           # Docker only"
+            echo "  ./launch.sh --prod                                    # Docker only (production)"
             echo "  ./launch.sh --dataset-dir s3://bucket/lerobot_dataset"
             echo "  ./launch.sh --packds --dataset-dir /path/to/lancedb"
             echo "  ./launch.sh --prod --packds --dataset-dir /path/to/lancedb"
@@ -97,11 +102,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate required arguments
+# Validate arguments
+# If dataset_dir is empty, only docker operations will be performed
 if [ -z "$DATASET_DIR" ]; then
-    echo "Error: --dataset-dir is required"
-    echo "Use --help for usage information"
-    exit 1
+    echo "⚠️  No dataset directory specified - only docker operations will be performed"
+    echo ""
 fi
 
 # Set port and API key based on environment
@@ -204,6 +209,14 @@ fi
 # =============================================================================
 # Run mode-specific tasks
 # =============================================================================
+
+# Only run dataset processing if DATASET_DIR is provided
+if [ -z "$DATASET_DIR" ]; then
+    echo ""
+    echo "✅ Docker setup complete! Open http://localhost:${LABEL_STUDIO_PORT}"
+    echo "   (No dataset processing - dataset directory not specified)"
+    exit 0
+fi
 
 if [ "$MODE" = "lerobot" ]; then
     # LeRobot mode - create tasks from S3/local videos

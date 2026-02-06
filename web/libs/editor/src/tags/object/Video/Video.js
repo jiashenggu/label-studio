@@ -121,6 +121,7 @@ const TagAttrs = types
     minplaybackspeed: types.optional(types.union(types.string, types.number), "0.25"),
 
     resolver: types.maybeNull(types.string),
+    scoreresolver: types.maybeNull(types.string),
   })
   .views((self) => ({
     // getter：把 resolver 当 optionList 解析
@@ -130,6 +131,17 @@ const TagAttrs = types
         return JSON.parse(self.resolver);
       } catch (e) {
         console.warn("[Video] resolver JSON 解析失败", e);
+        return [];
+      }
+    },
+
+    // getter：把 scoreresolver 当 scoreLevelList 解析
+    get scoreLevelList() {
+      if (!self.scoreresolver) return [];
+      try {
+        return JSON.parse(self.scoreresolver);
+      } catch (e) {
+        console.warn("[Video] scoreresolver JSON 解析失败", e);
         return [];
       }
     },

@@ -44,9 +44,9 @@ const Model = types
         kp.frame === frame ? { ...kp, options } : kp
       );
     },
-    updateKeypointScore(frame, score) {
+    updateKeypointScore(frame, scores) {
       self.sequence = self.sequence.map(kp =>
-        kp.frame === frame ? { ...kp, score } : kp
+        kp.frame === frame ? { ...kp, score: scores } : kp
       );
     },
     updateShape() {

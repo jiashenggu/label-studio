@@ -122,7 +122,7 @@ def create_label_config(fps: float = 30.0) -> str:
             value="$ego_view"
             sync="ego_view"
             framerate="{fps}"
-            timelineHeight="250"
+            timelineHeight="100"
             height="1"
             resolver='[
                 {{"value": "object adjustment", "label": "不完美：位置调整", "whenLabelValue": "suboptimal"}},
@@ -141,9 +141,9 @@ def create_label_config(fps: float = 30.0) -> str:
         
         <Labels name="videoLabels"
                 toName="ego_view">
-            <Label value="subgoal"    background="#944BFF"/>
-            <Label value="suboptimal" background="#FFA500"/>
-            <Label value="failure"    background="#FF0000"/>
+            <Label value="subgoal"       background="#944BFF"/>
+            <Label value="suboptimal"    background="#FFA500"/>
+            <Label value="failure"       background="#FF0000"/>
         </Labels>
         
         <TextArea name="notes"
@@ -250,7 +250,7 @@ def build_s3_tasks_map(bucket: str, prefix: str = "") -> dict:
             if not key.lower().endswith(".mp4"):
                 continue
 
-            rel_key = key[len(prefix) :].lstrip("/")
+            rel_key = key[len(prefix):].lstrip("/")
             parts = rel_key.split("/")
             if len(parts) < 2:
                 continue

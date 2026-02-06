@@ -100,7 +100,7 @@ This software is licensed under the [Apache 2.0 LICENSE](../LICENSE) © [HumanSi
 cd /home/gear/Documents/workspace/code/label-studio/web
 
 # 设置必要的环境变量
-export DJANGO_HOSTNAME=http://localhost:8111
+export DJANGO_HOSTNAME=http://localhost:8110
 export FRONTEND_HMR=true
 export FRONTEND_HOSTNAME=http://localhost:8010
 

@@ -8,6 +8,8 @@
 #   ./launch.sh --dataset-dir PATH              # LeRobot mode (S3 videos)
 #   ./launch.sh --dataset-dir PATH --packds     # PackDS mode (LanceDB frames)
 #   ./launch.sh --prod --dataset-dir PATH       # Use production port (8080)
+#   ./launch.sh --web                           # Proxy :8110 → local dev LS :8111
+#   ./launch.sh --web --prod                    # Proxy :8080 → Docker LS :8081
 #
 
 set -e
@@ -40,6 +42,7 @@ export S3_ENDPOINT_URL="https://pdx.s8k.io"
 MODE="lerobot"
 FPS=30.0
 MAX_EPISODES=""
+USE_WEB_SERVER=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -71,6 +74,10 @@ while [[ $# -gt 0 ]]; do
             MAX_EPISODES="$2"
             shift 2
             ;;
+        --web)
+            USE_WEB_SERVER=true
+            shift
+            ;;
         -h|--help)
             echo "Usage: ./launch.sh [OPTIONS]"
             echo ""
@@ -83,6 +90,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --lerobot             Use LeRobot mode (S3/local videos, default)"
             echo "  --prod, --production  Use production port (8080, Docker)"
             echo "  --dev, --development  Use development port (8111, local)"
+            echo "  --web                 Reverse proxy with dataset import"
+            echo "                        --web        → proxy :8110 → local LS :8111 (dev)"
+            echo "                        --web --prod → proxy :8080 → Docker LS :8081 (prod)"
             echo "  --fps N               Frame rate for playback (default: 15)"
             echo "  --max-episodes N      Maximum episodes to import (packds only)"
             echo ""
@@ -92,6 +102,8 @@ while [[ $# -gt 0 ]]; do
             echo "  ./launch.sh --dataset-dir s3://bucket/lerobot_dataset"
             echo "  ./launch.sh --packds --dataset-dir /path/to/lancedb"
             echo "  ./launch.sh --prod --packds --dataset-dir /path/to/lancedb"
+            echo "  ./launch.sh --web                                    # :8110 proxy → local (dev)"
+            echo "  ./launch.sh --web --prod                             # :8080 proxy → Docker (prod)"
             exit 0
             ;;
         *)
@@ -128,6 +140,101 @@ echo "Port: $LABEL_STUDIO_PORT"
 echo "Mode: $MODE"
 echo "Dataset: $DATASET_DIR"
 echo ""
+
+# =============================================================================
+# Web Server Mode (--web)
+# =============================================================================
+
+if [ "$USE_WEB_SERVER" = true ]; then
+
+    if [ "$USE_PRODUCTION" = true ]; then
+        # Production: proxy :8080 → Docker LS :8081
+        PROXY_PORT=8080
+        BACKEND_PORT=8081
+        API_KEY="$API_KEY_PROD"
+
+        echo "========================================"
+        echo "  Reverse Proxy + Dataset Import (Prod)"
+        echo "========================================"
+        echo "  User-facing:   http://localhost:${PROXY_PORT}/  (proxy)"
+        echo "  LS backend:    http://localhost:${BACKEND_PORT}/ (Docker)"
+        echo ""
+
+        # Ensure Label Studio Docker is running on backend port (8081)
+        check_ls_backend() {
+            curl -s "http://localhost:${BACKEND_PORT}/health" > /dev/null 2>&1
+        }
+
+        if check_ls_backend; then
+            echo "✓ Label Studio backend already running at http://localhost:${BACKEND_PORT}"
+        else
+            echo "🧹 Cleaning up existing containers..."
+            sudo docker rm -f ls 2>/dev/null || true
+            sudo docker pull scruple/label-studio:latest
+            echo "🚀 Starting Label Studio Docker on port ${BACKEND_PORT}..."
+            sudo docker run -d \
+                -u $(id -u):$(id -g) \
+                --name ls \
+                --env-file ls.env \
+                -p 0.0.0.0:${BACKEND_PORT}:8080 \
+                -v $(pwd)/mydata:/label-studio/data \
+                -v ~/Videos/lerobot_storage:/home/gear/Videos/lerobot_storage \
+                scruple/label-studio:latest \
+                label-studio \
+                --log-level DEBUG
+
+            echo "⏳ Waiting for Label Studio to start..."
+            until check_ls_backend; do
+                sleep 1
+            done
+            echo "✓ Label Studio backend ready at http://localhost:${BACKEND_PORT}"
+        fi
+    else
+        # Development: proxy :8110 → local LS :8111
+        PROXY_PORT=8110
+        BACKEND_PORT=8111
+        API_KEY="$API_KEY_DEV"
+
+        echo "========================================"
+        echo "  Reverse Proxy + Dataset Import (Dev)"
+        echo "========================================"
+        echo "  User-facing:   http://localhost:${PROXY_PORT}/  (proxy)"
+        echo "  LS backend:    http://localhost:${BACKEND_PORT}/ (local dev)"
+        echo ""
+
+        check_ls_backend() {
+            curl -s "http://localhost:${BACKEND_PORT}/health" > /dev/null 2>&1
+        }
+
+        if check_ls_backend; then
+            echo "✓ Label Studio dev server already running at http://localhost:${BACKEND_PORT}"
+        else
+            echo "⚠️  Label Studio is not running on port ${BACKEND_PORT}"
+            echo "   Please start it manually in another terminal:"
+            echo "   python label_studio/manage.py runserver 0.0.0.0:${BACKEND_PORT}"
+            echo ""
+            echo "⏳ Waiting for Label Studio to start..."
+            until check_ls_backend; do
+                sleep 2
+            done
+            echo "✓ Label Studio dev server ready at http://localhost:${BACKEND_PORT}"
+        fi
+    fi
+
+    echo ""
+    echo "🌐 Starting reverse proxy on port ${PROXY_PORT}..."
+    echo "   Label Studio: http://localhost:${PROXY_PORT}/"
+    echo "   Import:       http://localhost:${PROXY_PORT}/?dataset_dir=DATASET_NAME"
+    echo "   Import UI:    http://localhost:${PROXY_PORT}/import"
+    echo ""
+
+    python dataset_server.py \
+        --port ${PROXY_PORT} \
+        --backend ${BACKEND_PORT} \
+        --api-key "$API_KEY"
+
+    exit 0
+fi
 
 # =============================================================================
 # Check if Label Studio is running

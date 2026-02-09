@@ -91,7 +91,7 @@ import_lock = threading.Lock()
 def add_to_history(entry: dict):
     with import_lock:
         import_history.insert(0, entry)
-        if len(import_history) > 50:
+        if len(import_history) > 200:
             import_history.pop()
 
 
@@ -196,7 +196,7 @@ IMPORT_PAGE_HTML = r"""<!DOCTYPE html>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f7fa;color:#333;min-height:100vh}
-        .container{max-width:800px;margin:0 auto;padding:2rem 1rem}
+        .container{max-width:1100px;margin:0 auto;padding:2rem 1rem}
         .header{text-align:center;margin-bottom:2rem}
         .header h1{font-size:1.8rem;color:#1a1a2e;margin-bottom:.5rem}
         .header p{color:#666;font-size:.95rem}
@@ -228,9 +228,11 @@ IMPORT_PAGE_HTML = r"""<!DOCTYPE html>
         .spinner-icon{display:inline-block;width:32px;height:32px;border:3px solid #e0e0e0;border-top-color:#4361ee;border-radius:50%;animation:spin .8s linear infinite}
         @keyframes spin{to{transform:rotate(360deg)}}
         .spinner p{margin-top:.75rem;color:#666;font-size:.9rem}
-        .history-table{width:100%;border-collapse:collapse;font-size:.85rem}
-        .history-table th{text-align:left;padding:.5rem;border-bottom:2px solid #e0e0e0;color:#555;font-weight:600}
-        .history-table td{padding:.5rem;border-bottom:1px solid #f0f0f0}
+        .table-wrap{overflow-x:auto;margin:0 -.5rem;padding:0 .5rem}
+        .history-table{width:100%;border-collapse:collapse;font-size:.85rem;table-layout:fixed}
+        .history-table th{text-align:left;padding:.5rem;border-bottom:2px solid #e0e0e0;color:#555;font-weight:600;white-space:nowrap}
+        .history-table td{padding:.5rem;border-bottom:1px solid #f0f0f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .history-table .col-name{width:40%}.history-table .col-st{width:8%}.history-table .col-tasks{width:8%}.history-table .col-proj{width:24%}.history-table .col-src{width:8%}.history-table .col-time{width:12%}
         .history-table a{color:#4361ee;text-decoration:none}
         .history-table a:hover{text-decoration:underline}
         .badge{display:inline-block;padding:.15rem .5rem;border-radius:12px;font-size:.75rem;font-weight:600}
@@ -293,16 +295,18 @@ async function loadHistory(){
         const d=await r.json();
         const c=document.getElementById('historyContainer');
         if(!d.history||!d.history.length){c.innerHTML='<div class="empty-state">No imports yet</div>';return;}
-        let h='<table class="history-table"><thead><tr><th>Dataset</th><th>Status</th><th>Tasks</th><th>Project</th><th>Time</th></tr></thead><tbody>';
+        let h='<div class="table-wrap"><table class="history-table"><thead><tr><th class="col-name">Dataset / Project</th><th class="col-st">Status</th><th class="col-tasks">Tasks</th><th class="col-proj">Project</th><th class="col-src">Source</th><th class="col-time">Time</th></tr></thead><tbody>';
         d.history.forEach(e=>{
-            const name=e.dataset_dir?e.dataset_dir.split('/').pop():'?';
+            const name=e.dataset_dir?e.dataset_dir.split('/').pop():(e.project_name||'?');
             const st=e.success?'<span class="badge ok">OK</span>':'<span class="badge fail">FAIL</span>';
             const tasks=e.task_count||'-';
-            const link=e.project_id?'<a href="/projects/'+e.project_id+'/" target="_blank">Open #'+e.project_id+'</a>':(e.error||'-');
+            const pname=e.project_name||'#'+e.project_id;
+            const link=e.project_id?'<a href="/projects/'+e.project_id+'/" target="_blank" title="'+pname+'">'+pname+'</a>':(e.error||'-');
+            const src=e.source==='label_studio'?'<span style="color:#888;font-size:.8rem">Existing</span>':'<span style="color:#4361ee;font-size:.8rem">Imported</span>';
             const ts=e.timestamp?new Date(e.timestamp).toLocaleString():'-';
-            h+='<tr><td title="'+(e.dataset_dir||'')+'">'+name+'</td><td>'+st+'</td><td>'+tasks+'</td><td>'+link+'</td><td>'+ts+'</td></tr>';
+            h+='<tr><td title="'+(e.dataset_dir||e.project_name||'')+'">'+name+'</td><td>'+st+'</td><td>'+tasks+'</td><td title="'+pname+'">'+link+'</td><td>'+src+'</td><td>'+ts+'</td></tr>';
         });
-        h+='</tbody></table>';c.innerHTML=h;
+        h+='</tbody></table></div>';c.innerHTML=h;
     }catch(e){}
 }
 async function handleImport(ev){
@@ -592,9 +596,38 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self._send_json({"label_studio_online": online, "backend": self.server.ls_url})
 
     def _handle_api_history(self):
+        # Merge in-memory import history with existing Label Studio projects
         with import_lock:
             history_copy = list(import_history)
-        self._send_json({"history": history_copy})
+
+        # Also fetch all projects from Label Studio backend
+        ls_projects = []
+        try:
+            client = LabelStudioClient(
+                base_url=self.server.ls_url, api_key=self.server.api_key
+            )
+            projects = client.projects.list()
+            # Track project IDs already in import history to avoid duplicates
+            known_ids = {e.get("project_id") for e in history_copy if e.get("project_id")}
+            for p in projects:
+                if p.id in known_ids:
+                    continue
+                ls_projects.append({
+                    "success": True,
+                    "project_id": p.id,
+                    "project_name": p.title,
+                    "task_count": p.task_number if hasattr(p, "task_number") else "-",
+                    "dataset_dir": "",
+                    "timestamp": p.created_at.isoformat() if hasattr(p, "created_at") and p.created_at else "",
+                    "source": "label_studio",
+                })
+        except Exception as e:
+            print(f"Warning: could not fetch projects from LS: {e}")
+
+        # Combine: recent imports first, then LS projects sorted by creation time desc
+        ls_projects.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        combined = history_copy + ls_projects
+        self._send_json({"history": combined})
 
     def _serve_import_page(self, params: dict):
         html = IMPORT_PAGE_HTML.replace("%%S3_PREFIX%%", DEFAULT_S3_PREFIX)

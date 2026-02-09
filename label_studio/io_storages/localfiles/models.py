@@ -164,3 +164,51 @@ def export_annotation_to_local_files(sender, instance, **kwargs):
         for storage in project.io_storages_localfilesexportstorages.all():
             logger.debug(f'Export {instance} to Local Storage {storage}')
             storage.save_annotation(instance)
+
+
+@receiver(post_save, sender=Annotation)
+def check_project_completion_local_files(sender, instance, **kwargs):
+    """
+    After an annotation is saved, check if ALL tasks (episodes) in the project
+    have at least one non-cancelled annotation. If so, create a SUCCESS file
+    in every local export storage annotations folder.
+    """
+    if instance.was_cancelled:
+        return
+
+    project = instance.project
+    if not hasattr(project, 'io_storages_localfilesexportstorages'):
+        return
+
+    storages = project.io_storages_localfilesexportstorages.all()
+    if not storages:
+        return
+
+    # Check if all tasks in the project have at least one non-cancelled annotation
+    total_tasks = project.tasks.count()
+    if total_tasks == 0:
+        return
+
+    annotated_tasks = project.tasks.filter(
+        annotations__isnull=False,
+        annotations__was_cancelled=False,
+    ).distinct().count()
+
+    if annotated_tasks >= total_tasks:
+        from datetime import datetime as dt
+
+        for storage in storages:
+            success_path = os.path.join(storage.path, 'SUCCESS')
+            try:
+                with open(success_path, 'w') as f:
+                    f.write(
+                        f'All {total_tasks} episodes annotated.\n'
+                        f'Completed at: {dt.now().isoformat()}\n'
+                        f'Project ID: {project.id}\n'
+                    )
+                logger.info(
+                    f'Project {project.id} fully annotated ({total_tasks} tasks). '
+                    f'Created SUCCESS file at {success_path}'
+                )
+            except Exception as e:
+                logger.error(f'Failed to create SUCCESS file at {success_path}: {e}')

@@ -332,6 +332,54 @@ def export_annotation_to_s3_storages(sender, instance, **kwargs):
         start_job_async_or_sync(async_export_annotation_to_s3_storages, instance)
 
 
+@receiver(post_save, sender=Annotation)
+def check_project_completion_s3_storages(sender, instance, **kwargs):
+    """
+    After an annotation is saved, check if ALL tasks (episodes) in the project
+    have at least one non-cancelled annotation. If so, create a SUCCESS file
+    in every S3 export storage annotations folder.
+    """
+    if instance.was_cancelled:
+        return
+
+    project = instance.project
+    storages = getattr(project, 'io_storages_s3exportstorages', None)
+    if not storages or not storages.exists():
+        return
+
+    # Check if all tasks in the project have at least one non-cancelled annotation
+    total_tasks = project.tasks.count()
+    if total_tasks == 0:
+        return
+
+    annotated_tasks = project.tasks.filter(
+        annotations__isnull=False,
+        annotations__was_cancelled=False,
+    ).distinct().count()
+
+    if annotated_tasks >= total_tasks:
+        from datetime import datetime as dt
+
+        success_body = (
+            f'All {total_tasks} episodes annotated.\n'
+            f'Completed at: {dt.now().isoformat()}\n'
+            f'Project ID: {project.id}\n'
+        )
+        for storage in storages.all():
+            try:
+                _, s3 = storage.get_client_and_resource()
+                key = f'{storage.prefix}/SUCCESS' if storage.prefix else 'SUCCESS'
+                s3.Object(storage.bucket, key).put(Body=success_body)
+                logger.info(
+                    f'Project {project.id} fully annotated ({total_tasks} tasks). '
+                    f'Created SUCCESS file at s3://{storage.bucket}/{key}'
+                )
+            except Exception as e:
+                logger.error(
+                    f'Failed to create SUCCESS file in S3 storage {storage}: {e}'
+                )
+
+
 @receiver(pre_delete, sender=Annotation)
 def delete_annotation_from_s3_storages(sender, instance, **kwargs):
     links = S3ExportStorageLink.objects.filter(annotation=instance)

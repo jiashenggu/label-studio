@@ -157,14 +157,30 @@ const Model = types
 
     closestKeypoint(targetFrame, onlyPrevious = false) {
       const seq = self.sequence;
-      let result;
 
-      const keypoints = seq.filter(({ frame }) => frame <= targetFrame);
+      if (seq.length === 0) return undefined;
 
-      result = keypoints[keypoints.length - 1];
+      // Binary search: find the first index where seq[idx].frame > targetFrame
+      let lo = 0;
+      let hi = seq.length;
+
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+
+        if (seq[mid].frame <= targetFrame) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
+        }
+      }
+
+      // lo is now the first index where frame > targetFrame
+      // So lo - 1 is the last keypoint with frame <= targetFrame
+      const result = lo > 0 ? seq[lo - 1] : undefined;
 
       if (!result && onlyPrevious !== true) {
-        result = seq.find(({ frame }) => frame >= targetFrame);
+        // Return the first keypoint with frame >= targetFrame
+        return lo < seq.length ? seq[lo] : undefined;
       }
 
       return result;

@@ -1,6 +1,6 @@
 import type { KonvaEventObject } from "konva/lib/Node";
 import { observer } from "mobx-react";
-import { type FC, useMemo } from "react";
+import { type FC, useCallback, useMemo } from "react";
 import { Group, Rect } from "react-konva";
 import { useRegionStyles } from "../../../hooks/useRegionColor";
 import { getNodeAbsoluteDimensions, normalizeNodeDimentions } from "./tools";
@@ -48,17 +48,17 @@ const RectanglePure: FC<RectProps> = ({
     [box, waWidth, waHeight],
   );
 
-  const onDimensionUpdate = (e: KonvaEventObject<Event>) => {
+  const onDimensionUpdate = useCallback((e: KonvaEventObject<Event>) => {
     const node = e.target;
 
     if (e.type === "dragmove") onDragMove(e as KonvaEventObject<DragEvent>);
 
     reg.updateShape(getNodeAbsoluteDimensions(node, workingArea), frame);
-  };
+  }, [reg, workingArea, frame, onDragMove]);
 
-  const onTransform = (e: KonvaEventObject<Event>) => {
+  const onTransform = useCallback((e: KonvaEventObject<Event>) => {
     normalizeNodeDimentions(e.target, "rect");
-  };
+  }, []);
 
   return (
     <Group id={id}>

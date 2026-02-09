@@ -73,6 +73,11 @@ export const VirtualVideo = forwardRef<HTMLVideoElement, VirtualVideoProps>((pro
   const source = useRef<HTMLSourceElement | null>(null);
   const attachedEvents = useRef<[string, any][]>([]);
 
+  // Store latest props in a ref so stable event handlers can access current callbacks
+  // without needing to detach/re-attach listeners on every render
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
   const canPlayType = useCallback(
     async (url: string) => {
       let supported = false;
@@ -81,21 +86,21 @@ export const VirtualVideo = forwardRef<HTMLVideoElement, VirtualVideoProps>((pro
         supported = await canPlayUrl(url);
       }
 
-      if (props.canPlayType) {
-        props.canPlayType(supported);
+      if (propsRef.current.canPlayType) {
+        propsRef.current.canPlayType(supported);
       }
       return supported;
     },
-    [props.canPlayType],
+    [],
   );
 
   const createVideoElement = useCallback(() => {
     const videoEl = document.createElement("video");
 
-    videoEl.muted = !!props.muted;
+    videoEl.muted = !!propsRef.current.muted;
     videoEl.controls = false;
     videoEl.preload = "auto";
-    videoEl.playbackRate = props.speed ?? 1;
+    videoEl.playbackRate = propsRef.current.speed ?? 1;
 
     videoEl.crossOrigin = "anonymous";
 
@@ -128,24 +133,35 @@ export const VirtualVideo = forwardRef<HTMLVideoElement, VirtualVideoProps>((pro
     }
   }, []);
 
-  const attachEventListeners = () => {
-    const eventHandlers = Object.entries(props)
-      .filter(([key]) => key.startsWith("on"))
-      .map(([evt, handler]) => [evt.toLowerCase(), handler]);
+  // Attach stable event listeners that delegate to the latest props via propsRef.
+  // This avoids the expensive detach/re-attach cycle on every render.
+  const attachStableEventListeners = useCallback(() => {
+    const eventNames = Object.keys(propsRef.current)
+      .filter((key) => key.startsWith("on"))
+      .map((evt) => evt.toLowerCase());
 
-    const attached: [string, any][] = [];
+    const attached: [string, (e: Event) => void][] = [];
 
-    eventHandlers.forEach(([evt, handler]) => {
+    eventNames.forEach((evt) => {
       const evtName = evt.replace(/^on/, "");
 
-      video.current?.addEventListener(evtName, handler);
-      attached.push([evtName, handler]);
+      // Create a stable wrapper that always calls the latest handler from propsRef
+      const stableHandler = (e: Event) => {
+        const currentHandler = (propsRef.current as Record<string, any>)[
+          // Convert back to camelCase: "onplay" -> find matching "onPlay" etc.
+          Object.keys(propsRef.current).find((k) => k.toLowerCase() === evt) ?? evt
+        ];
+        currentHandler?.(e);
+      };
+
+      video.current?.addEventListener(evtName, stableHandler);
+      attached.push([evtName, stableHandler]);
     });
 
     attachedEvents.current = attached;
-  };
+  }, []);
 
-  const detachEventListeners = () => {
+  const detachEventListeners = useCallback(() => {
     if (!video.current) return;
 
     (attachedEvents.current ?? []).forEach(([evt, handler]) => {
@@ -153,7 +169,7 @@ export const VirtualVideo = forwardRef<HTMLVideoElement, VirtualVideoProps>((pro
     });
 
     attachedEvents.current = [];
-  };
+  }, []);
 
   const unloadSource = () => {
     if (source && video) {
@@ -172,22 +188,20 @@ export const VirtualVideo = forwardRef<HTMLVideoElement, VirtualVideoProps>((pro
 
     const sourceEl = document.createElement("source");
 
-    sourceEl.setAttribute("src", props.src ?? "");
+    sourceEl.setAttribute("src", propsRef.current.src ?? "");
     video.current?.appendChild(sourceEl);
 
     source.current = sourceEl;
-  }, [props.src]);
+  }, []);
 
-  useEffect(() => {
-    detachEventListeners();
-    attachEventListeners();
-  });
+  // No more useEffect without deps that detaches/re-attaches on every render!
+  // Event handlers are now stable and delegate to propsRef.
 
   // Create a video tag
   useEffect(() => {
     createVideoElement();
-    attachEventListeners();
-    canPlayType(props.src ?? "").then((canPlay) => {
+    attachStableEventListeners();
+    canPlayType(propsRef.current.src ?? "").then((canPlay) => {
       if (canPlay && video.current) {
         attachSource();
         attachRef(video.current);
@@ -211,6 +225,12 @@ export const VirtualVideo = forwardRef<HTMLVideoElement, VirtualVideoProps>((pro
       video.current.muted = props.muted;
     }
   }, [props.muted]);
+
+  useEffect(() => {
+    if (video.current && props.speed !== undefined) {
+      video.current.playbackRate = props.speed;
+    }
+  }, [props.speed]);
 
   return null;
 });

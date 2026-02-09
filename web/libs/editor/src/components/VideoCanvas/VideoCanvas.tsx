@@ -145,6 +145,15 @@ export const VideoCanvas = memo(
     const [zoom, setZoom] = useState(props.zoom ?? 1);
     const [pan, setPan] = useState<PanOptions>(props.pan ?? { x: 0, y: 0 });
 
+    // Refs for breaking callback dependency chains — these hold the latest values
+    // without causing callback recreation on every frame change
+    const currentFrameRef = useRef(currentFrame);
+    currentFrameRef.current = currentFrame;
+    const lengthRef = useRef(length);
+    lengthRef.current = length;
+    const playingRef = useRef(playing);
+    playingRef.current = playing;
+
     const [videoDimensions, setVideoDimensions] = useState<VideoDimentions>({ width: 0, height: 0, ratio: 1 });
 
     const [contrast, setContrast] = useState(1);
@@ -208,6 +217,16 @@ export const VideoCanvas = memo(
       }
     }, [videoDimensions, zoom, pan, filters, canvasWidth, canvasHeight, isImageSequenceMode]);
 
+    // Use ref for onFrameChange to avoid updateFrame recreation when parent callback changes
+    const onFrameChangeRef = useRef(props.onFrameChange);
+    onFrameChangeRef.current = props.onFrameChange;
+
+    const drawVideoRef = useRef(drawVideo);
+    drawVideoRef.current = drawVideo;
+
+    // updateFrame uses refs for currentFrame, length, drawVideo, and onFrameChange
+    // so it's NOT recreated on every frame change — this breaks the cascade that caused
+    // delayedUpdate → VirtualVideo prop changes → event listener re-attachment storms
     const updateFrame = useCallback(
       (force = false) => {
         if (!contextRef.current) return;
@@ -220,16 +239,16 @@ export const VideoCanvas = memo(
         const frameNumber = isFF(FF_VIDEO_FRAME_SEEK_PRECISION)
           ? Math.ceil(currentTime * framerate)
           : Math.round(currentTime * framerate);
-        const frame = clamp(frameNumber, 1, length || 1);
-        const onChange = props.onFrameChange ?? (() => {});
+        const frame = clamp(frameNumber, 1, lengthRef.current || 1);
+        const onChange = onFrameChangeRef.current ?? (() => {});
 
-        if (frame !== currentFrame || force === true) {
+        if (frame !== currentFrameRef.current || force === true) {
           setCurrentFrame(frame);
-          drawVideo();
-          onChange(frame, length);
+          drawVideoRef.current();
+          onChange(frame, lengthRef.current);
         }
       },
-      [framerate, currentFrame, drawVideo, props.onFrameChange, length, isImageSequenceMode],
+      [framerate, isImageSequenceMode],
     );
 
     const handleVideoBuffering = useCallback(
@@ -247,13 +266,14 @@ export const VideoCanvas = memo(
 
     const updateBuffering = useUpdateBuffering(videoRef, handleVideoBuffering);
 
+    // delayedUpdate now reads playing from ref so it's stable across frame changes
     const delayedUpdate = useCallback(() => {
       // Support both video and image sequence modes
       const mediaRef = isImageSequenceMode ? imageSequenceRef.current : videoRef.current;
       if (!mediaRef) return;
       if (!contextRef.current) return;
 
-      if (!playing) updateFrame(true);
+      if (!playingRef.current) updateFrame(true);
 
       if (!isImageSequenceMode) {
         // Video-specific buffering handling
@@ -274,9 +294,23 @@ export const VideoCanvas = memo(
         // Image sequence buffering is handled by VirtualImageSequence internally
         hasLoadedRef.current = true;
       }
-    }, [playing, updateFrame, isImageSequenceMode]);
+    }, [updateFrame, isImageSequenceMode]);
 
-    // VIDEO EVENTS'
+    // Stable refs for parent callbacks to avoid handler recreation
+    const onPlayRef = useRef(props.onPlay);
+    onPlayRef.current = props.onPlay;
+    const onPauseRef = useRef(props.onPause);
+    onPauseRef.current = props.onPause;
+    const onSeekedRef = useRef(props.onSeeked);
+    onSeekedRef.current = props.onSeeked;
+    const onEndedRef = useRef(props.onEnded);
+    onEndedRef.current = props.onEnded;
+    const onErrorRef = useRef(props.onError);
+    onErrorRef.current = props.onError;
+    const onTimeUpdateRef = useRef(props.onTimeUpdate);
+    onTimeUpdateRef.current = props.onTimeUpdate;
+
+    // VIDEO EVENTS — all handlers are now stable (empty deps) via refs
     const handleVideoPlay = useCallback(() => {
       setPlaying(true);
       if (!isSyncedBuffering) {
@@ -284,8 +318,8 @@ export const VideoCanvas = memo(
       } else {
         updateBuffering();
       }
-      props.onPlay?.();
-    }, [props.onPlay]);
+      onPlayRef.current?.();
+    }, []);
 
     const handleVideoPause = useCallback(() => {
       setPlaying(false);
@@ -294,8 +328,8 @@ export const VideoCanvas = memo(
       } else {
         updateBuffering();
       }
-      props.onPause?.();
-    }, [props.onPause]);
+      onPauseRef.current?.();
+    }, []);
 
     const handleVideoPlaying = useCallback(() => {
       if (!isSyncedBuffering) {
@@ -317,10 +351,10 @@ export const VideoCanvas = memo(
       if (!isSyncedBuffering) {
         setBuffering(false);
       }
-      props.onSeeked?.();
-      props.onEnded?.();
-      props.onPause?.();
-    }, [props.onEnded]);
+      onSeekedRef.current?.();
+      onEndedRef.current?.();
+      onPauseRef.current?.();
+    }, []);
 
     const handleVideoError = useCallback(() => {
       const video = videoRef.current;
@@ -334,9 +368,35 @@ export const VideoCanvas = memo(
       } else if (video) {
         // If the video never loaded and errored, we can't do anything about it
         // so report it to the consumer
-        props.onError?.(video.error);
+        onErrorRef.current?.(video.error);
       }
-    }, [props.onError]);
+    }, []);
+
+    // Stable callbacks for VirtualVideo props — avoids inline arrow functions that change every render
+    const handleCanPlayType = useCallback((supported: boolean) => {
+      supportedFileTypeRef.current = supported;
+    }, []);
+
+    const handleVideoSeeked = useCallback((event: any) => {
+      if (!isSyncedBuffering) {
+        delayedUpdate();
+      }
+      onSeekedRef.current?.(event);
+    }, [delayedUpdate]);
+
+    const handleVideoSeeking = useCallback((event: any) => {
+      if (!isSyncedBuffering) {
+        delayedUpdate();
+      }
+      onSeekedRef.current?.(event);
+    }, [delayedUpdate]);
+
+    const handleVideoTimeUpdate = useCallback((event: any) => {
+      if (!isSyncedBuffering) {
+        delayedUpdate();
+      }
+      onTimeUpdateRef.current?.(event);
+    }, [delayedUpdate]);
 
     const handleAnimationFrame = () => {
       updateFrame();
@@ -809,29 +869,14 @@ export const VideoCanvas = memo(
             src={props.src}
             speed={props.speed}
             muted={props.muted ?? false}
-            canPlayType={(supported) => (supportedFileTypeRef.current = supported)}
+            canPlayType={handleCanPlayType}
             onPlay={handleVideoPlay}
             onPause={handleVideoPause}
             onLoadedData={delayedUpdate}
             onCanPlay={delayedUpdate}
-            onSeeked={(event) => {
-              if (!isSyncedBuffering) {
-                delayedUpdate();
-              }
-              props.onSeeked?.(event);
-            }}
-            onSeeking={(event) => {
-              if (!isSyncedBuffering) {
-                delayedUpdate();
-              }
-              props.onSeeked?.(event);
-            }}
-            onTimeUpdate={(event) => {
-              if (!isSyncedBuffering) {
-                delayedUpdate();
-              }
-              props.onTimeUpdate?.(event);
-            }}
+            onSeeked={handleVideoSeeked}
+            onSeeking={handleVideoSeeking}
+            onTimeUpdate={handleVideoTimeUpdate}
             onProgress={delayedUpdate}
             onPlaying={handleVideoPlaying}
             onWaiting={handleVideoWaiting}

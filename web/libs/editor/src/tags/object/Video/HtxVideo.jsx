@@ -168,22 +168,29 @@ const HtxVideoView = ({ item, store }) => {
     },
   });
 
+  // Use refs to avoid recreating setPosition/setVideoLength on every frame/length change.
+  // This breaks the cascade: position change → setPosition recreation → handleFrameChange recreation
+  const positionRef = useRef(position);
+  positionRef.current = position;
+  const videoLengthRef = useRef(videoLength);
+  videoLengthRef.current = videoLength;
+
   const setPosition = useCallback(
     (value) => {
-      if (value !== position && videoLength) {
-        const nextPosition = clamp(value, 1, videoLength);
+      if (value !== positionRef.current && videoLengthRef.current) {
+        const nextPosition = clamp(value, 1, videoLengthRef.current);
 
         _setPosition(nextPosition);
       }
     },
-    [position, videoLength],
+    [],
   );
 
   const setVideoLength = useCallback(
     (value) => {
-      if (value !== videoLength) _setVideoLength(value);
+      if (value !== videoLengthRef.current) _setVideoLength(value);
     },
-    [videoLength],
+    [],
   );
 
   const supportsRegions = useMemo(() => {
@@ -345,7 +352,7 @@ const HtxVideoView = ({ item, store }) => {
       setVideoLength(length);
       item.setOnlyFrame(position);
     },
-    [item, setPosition, setVideoLength],
+    [item],
   );
 
   const handleVideoLoad = useCallback(
@@ -498,12 +505,12 @@ const HtxVideoView = ({ item, store }) => {
 
   const handleTimelinePositionChange = useCallback(
     (newPosition) => {
-      if (position !== newPosition) {
+      if (positionRef.current !== newPosition) {
         item.setFrame(newPosition);
         setPosition(newPosition);
       }
     },
-    [item, position],
+    [item],
   );
 
   useEffect(

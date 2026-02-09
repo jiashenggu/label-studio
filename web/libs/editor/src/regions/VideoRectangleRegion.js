@@ -15,24 +15,49 @@ const Model = types
     props: ["x", "y", "width", "height", "rotation"],
   }))
   .views((self) => ({
-    getShape(frame) {
-      let prev;
-      let next;
+    // Binary search to find the insertion point for a given frame in the sorted sequence.
+    // Returns the index of the first element with frame >= target, or sequence.length if none.
+    _bsearch(targetFrame) {
+      const seq = self.sequence;
+      let lo = 0;
+      let hi = seq.length;
 
-      for (const item of self.sequence) {
-        if (item.frame === frame) {
-          return onlyProps(self.props, item);
-        }
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
 
-        if (item.frame > frame) {
-          next = item;
-          break;
+        if (seq[mid].frame < targetFrame) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
         }
-        prev = item;
       }
 
-      if (!prev) return null;
-      if (!next) return onlyProps(self.props, prev);
+      return lo;
+    },
+
+    getShape(frame) {
+      const seq = self.sequence;
+
+      if (seq.length === 0) return null;
+
+      // Binary search: find first index where seq[idx].frame >= frame
+      const idx = self._bsearch(frame);
+
+      // Exact match
+      if (idx < seq.length && seq[idx].frame === frame) {
+        return onlyProps(self.props, seq[idx]);
+      }
+
+      // frame is before all keypoints
+      if (idx === 0) return null;
+
+      const prev = seq[idx - 1];
+
+      // frame is after all keypoints — clamp to last
+      if (idx >= seq.length) return onlyProps(self.props, prev);
+
+      // Interpolate between prev and next
+      const next = seq[idx];
 
       return Object.fromEntries(self.props.map((prop) => [prop, interpolateProp(prev, next, frame, prop)]));
     },

@@ -370,6 +370,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
     Everything else is proxied transparently to the Label Studio backend.
     """
 
+    # Use HTTP/1.1 so connections can be reused (critical for tunnel services)
+    protocol_version = "HTTP/1.1"
+
     server: ThreadedHTTPServer  # type hint for IDE
 
     def log_message(self, format, *args):
@@ -439,50 +442,66 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
             # Read request body
             content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length) if content_length > 0 else None
+            req_body = self.rfile.read(content_length) if content_length > 0 else None
 
-            # Build forwarded headers
+            # Build forwarded headers (use items() to preserve duplicates)
             headers = {}
-            for key in self.headers:
-                val = self.headers[key]
+            for key, val in self.headers.items():
                 if key.lower() in ("host",):
                     continue
                 headers[key] = val
             headers["Host"] = f"{self.server.backend_host}:{self.server.backend_port}"
             headers["X-Forwarded-For"] = self.client_address[0]
             headers["X-Forwarded-Host"] = self.headers.get("Host", "localhost")
-            headers["X-Forwarded-Proto"] = "http"
+            # Detect if client came via HTTPS (e.g. loophole, ngrok)
+            fwd_proto = self.headers.get("X-Forwarded-Proto", "http")
+            headers["X-Forwarded-Proto"] = fwd_proto
 
-            conn.request(self.command, self.path, body=body, headers=headers)
+            conn.request(self.command, self.path, body=req_body, headers=headers)
             resp = conn.getresponse()
 
-            # Send response status
-            self.send_response(resp.status)
+            # Read full response body so we can set Content-Length reliably
+            # (backend may use chunked encoding which we strip)
+            resp_body = resp.read()
 
-            # Forward response headers, rewriting Location if needed
+            # Send response status (use send_response_only to avoid auto Date/Server)
+            self.send_response_only(resp.status)
+
+            # Forward response headers from backend
+            skip_headers = HOP_BY_HOP | {"content-length"}
             for key, val in resp.getheaders():
-                if key.lower() in HOP_BY_HOP:
+                if key.lower() in skip_headers:
                     continue
-                # Rewrite Location headers so redirects stay on proxy port
                 if key.lower() == "location":
                     val = self._rewrite_location(val)
                 self.send_header(key, val)
+
+            # Set accurate Content-Length
+            self.send_header("Content-Length", str(len(resp_body)))
             self.end_headers()
 
-            # Stream response body
-            while True:
-                chunk = resp.read(65536)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
+            if self.command != "HEAD":
+                self.wfile.write(resp_body)
 
             conn.close()
+        except ConnectionRefusedError:
+            error_msg = (
+                f"Cannot connect to Label Studio backend at "
+                f"{self.server.backend_host}:{self.server.backend_port}"
+            )
+            print(error_msg)
+            body = error_msg.encode()
+            self.send_response(502)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         except Exception as e:
             error_msg = f"Proxy error: {e}"
             print(error_msg)
             body = error_msg.encode()
             self.send_response(502)
-            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -491,10 +510,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
         """Rewrite backend Location header to point at proxy port."""
         backend_origin = f"http://{self.server.backend_host}:{self.server.backend_port}"
         if location.startswith(backend_origin):
-            # Replace backend origin with whatever Host the client used
-            host = self.headers.get("Host", f"localhost:{self.server.server_address[1]}")
-            location = f"http://{host}" + location[len(backend_origin):]
-        return location
+            path_part = location[len(backend_origin):]
+        elif location.startswith("/"):
+            path_part = location
+        else:
+            return location
+
+        # Build the correct origin from the client's perspective
+        host = self.headers.get("Host", f"localhost:{self.server.server_address[1]}")
+        proto = self.headers.get("X-Forwarded-Proto", "http")
+        return f"{proto}://{host}{path_part}"
 
     # ------------------------------------------------------------------
     # Import handlers

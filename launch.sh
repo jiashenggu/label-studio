@@ -165,9 +165,7 @@ if [ "$USE_WEB_SERVER" = true ]; then
             curl -s "http://localhost:${BACKEND_PORT}/health" > /dev/null 2>&1
         }
 
-        if check_ls_backend; then
-            echo "✓ Label Studio backend already running at http://localhost:${BACKEND_PORT}"
-        else
+        start_docker_backend() {
             echo "🧹 Cleaning up existing containers..."
             sudo docker rm -f ls 2>/dev/null || true
             sudo docker pull scruple/label-studio:latest
@@ -188,6 +186,31 @@ if [ "$USE_WEB_SERVER" = true ]; then
                 sleep 1
             done
             echo "✓ Label Studio backend ready at http://localhost:${BACKEND_PORT}"
+        }
+
+        if check_ls_backend; then
+            echo "✓ Label Studio backend already running at http://localhost:${BACKEND_PORT}"
+            echo ""
+            echo "What would you like to do?"
+            echo "  1) Use existing Label Studio instance"
+            echo "  2) Restart Label Studio (Docker)"
+            echo ""
+            read -p "Enter choice [1]: " choice
+            choice=${choice:-1}
+
+            case $choice in
+                1)
+                    echo "Using existing instance..."
+                    ;;
+                2)
+                    start_docker_backend
+                    ;;
+                *)
+                    echo "Invalid choice. Using existing instance..."
+                    ;;
+            esac
+        else
+            start_docker_backend
         fi
     else
         # Development: proxy :8110 → local LS :8111

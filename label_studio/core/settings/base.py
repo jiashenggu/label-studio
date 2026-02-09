@@ -573,7 +573,7 @@ IMPORT_BATCH_SIZE = int(get_env('IMPORT_BATCH_SIZE', 500))
 # Batch size for processing prediction imports to avoid memory issues with large datasets
 PREDICTION_IMPORT_BATCH_SIZE = int(get_env('PREDICTION_IMPORT_BATCH_SIZE', 500))
 PROJECT_TITLE_MIN_LEN = 3
-PROJECT_TITLE_MAX_LEN = 50
+PROJECT_TITLE_MAX_LEN = 100
 LOGIN_REDIRECT_URL = '/'
 LOGIN_URL = '/user/login/'
 
@@ -786,6 +786,7 @@ S3_TRUSTED_STORAGE_DOMAINS = get_env_list(
         'oracle.com',
         'amazon.com',
         'appdomain.cloud',
+        's8k.io',
     ],
 )
 

@@ -82,9 +82,12 @@ class ResolveStorageUriAPIMixin:
         if resolved.get('presign_ttl'):
             max_age = resolved.get('presign_ttl') * 60
 
-        # Proxy to presigned url
+        # Redirect to presigned url.
+        # Use 'private' instead of 'no-store' so browsers can cache the redirect
+        # for the duration of the presign TTL, avoiding redundant round-trips to the backend.
+        # 'must-revalidate' ensures the browser checks with the server once max-age expires.
         response = HttpResponseRedirect(redirect_to=url, status=status.HTTP_303_SEE_OTHER)
-        response.headers['Cache-Control'] = f'no-store, max-age={max_age}'
+        response.headers['Cache-Control'] = f'private, max-age={max_age}, must-revalidate'
         # Remove Sentry trace propagation headers to avoid CORS issues
         response.headers.pop('baggage', None)
         response.headers.pop('sentry-trace', None)

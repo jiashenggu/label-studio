@@ -53,6 +53,22 @@ class Config:
     """Frame rate for video playback."""
 
 
+def derive_project_name(
+    dataset_dir: str,
+    project_name: Optional[str] = None,
+    max_len: int = 100,
+) -> str:
+    """Derive a project name from the dataset directory path.
+
+    If *project_name* is already provided it is returned as-is.
+    Otherwise the last path segment is used, stripping any dotted prefix
+    (e.g. ``xdof.assembly_…`` → ``assembly_…``) and truncated to *max_len*.
+    """
+    if project_name:
+        return project_name
+    return dataset_dir.rstrip("/").split("/")[-1].split(".")[-1][:max_len]
+
+
 def create_label_config(fps: float = 30.0) -> str:
     """Generate Label Studio config for multi-view video annotation."""
     return f"""
@@ -720,7 +736,7 @@ def main():
         print("📝 Creating new project...")
         label_config = create_label_config(cfg.fps)
 
-        project_name = cfg.project_name or cfg.dataset_dir.rstrip("/").split("/")[-1][:100]
+        project_name = derive_project_name(cfg.dataset_dir, cfg.project_name)
         project = client.projects.create(title=project_name, label_config=label_config)
         print(f"✓ Created project: {project.title} (ID: {project.id})")
     else:

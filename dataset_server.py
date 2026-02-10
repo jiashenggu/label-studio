@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from create_tasks import (
     Config,
     create_label_config,
+    derive_project_name,
     import_lerobot_tasks,
     ensure_export_storage,
 )
@@ -155,7 +156,7 @@ def do_import(dataset_dir: str, ls_url: str, api_key: str) -> dict:
 
     # Create project
     label_config = create_label_config(cfg.fps)
-    project_name = full_dataset_dir.rstrip("/").split("/")[-1].split(".")[-1][:50]
+    project_name = derive_project_name(full_dataset_dir, max_len=50)
     project = client.projects.create(title=project_name, label_config=label_config)
 
     # Import tasks

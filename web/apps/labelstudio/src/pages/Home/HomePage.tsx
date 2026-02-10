@@ -46,6 +46,11 @@ const actions = [
     icon: IconUserAdd,
     type: "inviteMembers",
   },
+  {
+    title: "🤖 Robotic Data Import",
+    icon: IconExternal,
+    type: "roboticImport",
+  },
 ] as const;
 
 type Action = (typeof actions)[number]["type"];
@@ -73,6 +78,9 @@ export const HomePage: Page = () => {
           break;
         case "inviteMembers":
           setInvitationOpen(true);
+          break;
+        case "roboticImport":
+          window.open(window.APP_SETTINGS?.robotic_import_url || `${location.origin}/import`, "_blank");
           break;
       }
     };

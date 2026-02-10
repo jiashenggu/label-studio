@@ -185,7 +185,7 @@ ProjectsPage.context = ({ openModal, showButton }) => {
   return (
     <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
       <Button
-          onClick={() => window.open(window.APP_SETTINGS?.robotic_import_url || `${location.protocol}//${location.hostname}:8080/import`, "_blank")}
+          onClick={() => window.open(window.APP_SETTINGS?.robotic_import_url || `${location.origin}/import`, "_blank")}
         size="small"
         aria-label="Robotic Data Import"
       >

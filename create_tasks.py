@@ -556,10 +556,16 @@ def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
     # Load episode metadata from meta/episodes.jsonl
     episodes_metadata = load_episodes_metadata(cfg.dataset_dir)
 
-    # Load action.source data from parquet files for takeover annotations
-    print()
-    print("🔍 Loading action.source data for takeover annotations...")
-    episode_action_sources = load_episode_action_sources(cfg.dataset_dir)
+    # Load action.source data only for dagger projects
+    is_dagger = "dagger" in (project.title or "").lower()
+    episode_action_sources: Dict[int, List[int]] = {}
+    if is_dagger:
+        print()
+        print("🔍 Loading action.source data for takeover annotations (dagger project)...")
+        episode_action_sources = load_episode_action_sources(cfg.dataset_dir)
+    else:
+        print()
+        print("ℹ️  Skipping action.source (project name does not contain 'dagger')")
 
     # Import tasks and add metadata
     tasks_json = []
@@ -591,7 +597,7 @@ def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
         # Build the task entry with data and optional annotations
         task_entry = {"data": task_data}
 
-        # Add human takeover annotations if available for this episode
+        # Add human takeover as predictions (pre-annotations, not submitted)
         if episode_idx in episode_action_sources:
             action_sources = episode_action_sources[episode_idx]
             annotation_results = build_action_source_predictions(
@@ -599,7 +605,7 @@ def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
             )
 
             if annotation_results:
-                task_entry["annotations"] = [{
+                task_entry["predictions"] = [{
                     "result": annotation_results,
                 }]
                 takeover_stats["with_predictions"] += 1

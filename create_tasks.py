@@ -4,15 +4,27 @@ Task creation script for Label Studio.
 Import video files from local or S3 storage (LeRobot format).
 """
 
+from enum import IntEnum
+from io import BytesIO
 from label_studio_sdk import LabelStudio
 import tyro
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 import os
 import json
+import uuid
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 import re
+
+import pyarrow.parquet as pq
+
+
+class ActionSource(IntEnum):
+    """Action source status — matches ActionSrcStatusEnum from groot."""
+    OTHER = 0
+    MODEL = 1
+    HUMAN = 2
 
 
 @dataclass
@@ -141,9 +153,10 @@ def create_label_config(fps: float = 30.0) -> str:
         
         <Labels name="videoLabels"
                 toName="ego_view">
-            <Label value="subgoal"       background="#944BFF"/>
-            <Label value="suboptimal"    background="#FFA500"/>
-            <Label value="failure"       background="#FF0000"/>
+            <Label value="subgoal"        background="#944BFF"/>
+            <Label value="suboptimal"     background="#FFA500"/>
+            <Label value="failure"        background="#FF0000"/>
+            <Label value="human_takeover" background="#2196F3"/>
         </Labels>
         
         <TextArea name="notes"
@@ -207,6 +220,185 @@ def load_episodes_metadata(dataset_dir: str) -> Dict[int, Dict[str, Any]]:
             print(f"⚠️  episodes.jsonl not found at {episodes_path}")
 
     return episodes_map
+
+
+def load_episode_action_sources(dataset_dir: str) -> Dict[int, List[int]]:
+    """
+    Load action.source data from parquet files for each episode.
+
+    Reads all parquet files under data/ in the dataset directory and extracts
+    the action.source column grouped by episode_index.
+
+    Args:
+        dataset_dir: Root directory of LeRobot dataset (local path or s3://)
+
+    Returns:
+        Dictionary mapping episode_index to a list of action.source values
+        (ordered by frame_index). Each value is 0=OTHER, 1=MODEL, 2=HUMAN.
+    """
+    episode_sources: Dict[int, List[Tuple[int, int]]] = {}  # ep_idx -> [(frame_idx, source)]
+
+    if dataset_dir.startswith("s3://"):
+        bucket, prefix = dataset_dir.replace("s3://", "").split("/", 1)
+        prefix = prefix.rstrip("/") + "/data/"
+
+        try:
+            s3_client = boto3.client("s3")
+            s3_resource = boto3.resource("s3")
+            bucket_obj = s3_resource.Bucket(bucket)
+
+            parquet_keys = []
+            for obj in bucket_obj.objects.filter(Prefix=prefix):
+                if obj.key.lower().endswith(".parquet"):
+                    parquet_keys.append(obj.key)
+
+            print(f"📊 Found {len(parquet_keys)} parquet files in s3://{bucket}/{prefix}")
+
+            for key in parquet_keys:
+                response = s3_client.get_object(Bucket=bucket, Key=key)
+                buf = BytesIO(response["Body"].read())
+                table = pq.read_table(buf, columns=["episode_index", "frame_index", "action.source"])
+                ep_indices = table.column("episode_index").to_pylist()
+                frame_indices = table.column("frame_index").to_pylist()
+                action_sources = table.column("action.source").to_pylist()
+
+                for ep_idx, frame_idx, src in zip(ep_indices, frame_indices, action_sources):
+                    episode_sources.setdefault(ep_idx, []).append((frame_idx, int(src)))
+
+        except Exception as e:
+            print(f"⚠️  Could not load action.source from S3 parquet: {e}")
+            return {}
+    else:
+        data_path = os.path.join(dataset_dir, "data")
+        if not os.path.exists(data_path):
+            print(f"⚠️  data/ directory not found at {data_path}")
+            return {}
+
+        parquet_files = []
+        for root, _, files in os.walk(data_path):
+            for f in files:
+                if f.lower().endswith(".parquet"):
+                    parquet_files.append(os.path.join(root, f))
+
+        print(f"📊 Found {len(parquet_files)} parquet files in {data_path}")
+
+        for pf in parquet_files:
+            try:
+                table = pq.read_table(pf, columns=["episode_index", "frame_index", "action.source"])
+                ep_indices = table.column("episode_index").to_pylist()
+                frame_indices = table.column("frame_index").to_pylist()
+                action_sources = table.column("action.source").to_pylist()
+
+                for ep_idx, frame_idx, src in zip(ep_indices, frame_indices, action_sources):
+                    episode_sources.setdefault(ep_idx, []).append((frame_idx, int(src)))
+            except KeyError:
+                # action.source column not present in this file
+                continue
+            except Exception as e:
+                print(f"⚠️  Could not read {pf}: {e}")
+                continue
+
+    # Sort each episode's frames by frame_index and return just the source values
+    result: Dict[int, List[int]] = {}
+    for ep_idx, frames in episode_sources.items():
+        frames.sort(key=lambda x: x[0])  # sort by frame_index
+        result[ep_idx] = [src for _, src in frames]
+
+    print(f"✓ Loaded action.source for {len(result)} episodes")
+    return result
+
+
+def extract_human_segments(
+    action_sources: List[int],
+) -> List[Tuple[int, int]]:
+    """
+    Extract contiguous HUMAN takeover segments from action.source data.
+
+    Args:
+        action_sources: List of action source values per frame
+            (0=OTHER, 1=MODEL, 2=HUMAN).
+
+    Returns:
+        List of (start_frame, end_frame) tuples (end is exclusive).
+    """
+    segments: List[Tuple[int, int]] = []
+    start = None
+
+    for i, src in enumerate(action_sources):
+        if src == ActionSource.HUMAN:
+            if start is None:
+                start = i
+        else:
+            if start is not None:
+                segments.append((start, i))
+                start = None
+
+    if start is not None:
+        segments.append((start, len(action_sources)))
+
+    return segments
+
+
+def build_action_source_predictions(
+    action_sources: List[int],
+    fps: float = 30.0,
+) -> List[dict]:
+    """
+    Build a Label Studio prediction for human takeover segments.
+
+    All HUMAN segments are merged into one videorectangle with
+    ``enabled=False`` marking each segment's end boundary.
+
+    Args:
+        action_sources: List of action source values per frame
+            (0=OTHER, 1=MODEL, 2=HUMAN).
+        fps: Video frame rate, used to compute the ``time`` field.
+
+    Returns:
+        List with a single annotation result dict, or empty list
+        if there are no human segments.
+    """
+    segments = extract_human_segments(action_sources)
+    if not segments:
+        return []
+
+    total_frames = len(action_sources)
+    duration = total_frames / fps
+
+    sequence = []
+    for start, end in segments:
+        start_frame = start + 1          # LS frames are 1-indexed
+        end_frame = end                  # our end is exclusive
+        sequence.append({
+            "frame": start_frame,
+            "x": 0, "y": 0,
+            "width": 1, "height": 1,
+            "rotation": 0,
+            "enabled": True,
+            "time": start_frame / fps,
+        })
+        sequence.append({
+            "frame": end_frame,
+            "x": 0, "y": 0,
+            "width": 1, "height": 1,
+            "rotation": 0,
+            "enabled": False,
+            "time": end_frame / fps,
+        })
+
+    return [{
+        "id": uuid.uuid4().hex[:10],
+        "from_name": "box",
+        "to_name": "ego_view",
+        "type": "videorectangle",
+        "origin": "manual",
+        "value": {
+            "framesCount": total_frames,
+            "duration": duration,
+            "sequence": sequence,
+            "labels": ["human_takeover"],
+        },
+    }]
 
 
 def name2key(view_name: str, view_dirname: str) -> str:
@@ -364,8 +556,15 @@ def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
     # Load episode metadata from meta/episodes.jsonl
     episodes_metadata = load_episodes_metadata(cfg.dataset_dir)
 
+    # Load action.source data from parquet files for takeover annotations
+    print()
+    print("🔍 Loading action.source data for takeover annotations...")
+    episode_action_sources = load_episode_action_sources(cfg.dataset_dir)
+
     # Import tasks and add metadata
     tasks_json = []
+    takeover_stats = {"with_predictions": 0, "human_segments": 0}
+
     for idx, (group_key, task_data) in enumerate(tasks_map.items()):
         # Extract episode number from group_key or filename
         episode_match = re.search(r"episode[_-](\d+)", group_key, re.IGNORECASE)
@@ -389,10 +588,34 @@ def import_lerobot_tasks(cfg: Config, client: LabelStudio, project) -> int:
                     ep_meta["tasks"][0] if isinstance(ep_meta["tasks"], list) else ep_meta["tasks"]
                 )
 
-        tasks_json.append(task_data)
+        # Build the task entry with data and optional annotations
+        task_entry = {"data": task_data}
+
+        # Add human takeover annotations if available for this episode
+        if episode_idx in episode_action_sources:
+            action_sources = episode_action_sources[episode_idx]
+            annotation_results = build_action_source_predictions(
+                action_sources, cfg.fps,
+            )
+
+            if annotation_results:
+                task_entry["annotations"] = [{
+                    "result": annotation_results,
+                }]
+                takeover_stats["with_predictions"] += 1
+                takeover_stats["human_segments"] += len(
+                    extract_human_segments(action_sources)
+                )
+
+        tasks_json.append(task_entry)
 
     print()
     print(f"📥 Importing {len(tasks_json)} tasks...")
+    if takeover_stats["with_predictions"] > 0:
+        print(
+            f"   📊 Takeover predictions: {takeover_stats['with_predictions']} tasks, "
+            f"{takeover_stats['human_segments']} human takeover segments"
+        )
 
     result = client.projects.import_tasks(
         request=tasks_json,
@@ -491,7 +714,7 @@ def main():
         print("📝 Creating new project...")
         label_config = create_label_config(cfg.fps)
 
-        project_name = cfg.project_name or cfg.dataset_dir.rstrip("/").split("/")[-1].split(".")[-1][:50]
+        project_name = cfg.project_name or cfg.dataset_dir.rstrip("/").split("/")[-1][:100]
         project = client.projects.create(title=project_name, label_config=label_config)
         print(f"✓ Created project: {project.title} (ID: {project.id})")
     else:

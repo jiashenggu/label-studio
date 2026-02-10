@@ -1,6 +1,6 @@
 LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true \
 LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/home/gear/Videos/lerobot_storage \
-CSRF_TRUSTED_ORIGINS="http://localhost:8010, http://0.0.0.0:8111" \
+CSRF_TRUSTED_ORIGINS="http://localhost:8010,http://localhost:8111,http://localhost:8110" \
 USE_X_FORWARDED_HOST=true \
 USE_X_FORWARDED_PORT=true \
 SECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https \

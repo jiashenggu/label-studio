@@ -403,7 +403,7 @@ export const ImportPage = ({
           variant="primary"
           look="outlined"
           type="button"
-          onClick={() => window.open("http://127.0.0.1:8080/import", "_blank")}
+          onClick={() => window.open(window.APP_SETTINGS?.robotic_import_url || `${location.protocol}//${location.hostname}:8080/import`, "_blank")}
           aria-label="Robotic Data Import"
         >
           🤖 Robotic Data Import

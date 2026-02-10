@@ -149,6 +149,7 @@ export const ProjectsPage = () => {
               totalItems={totalItems}
               loadNextPage={loadNextPage}
               pageSize={defaultPageSize}
+              onDeleteProject={fetchProjects}
             />
           ) : (
             <EmptyProjectsList openModal={openModal} />
@@ -182,8 +183,17 @@ ProjectsPage.routes = ({ store }) => [
 ProjectsPage.context = ({ openModal, showButton }) => {
   if (!showButton) return null;
   return (
-    <Button onClick={openModal} size="small" aria-label="Create new project">
-      Create
-    </Button>
+    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+      <Button
+          onClick={() => window.open(window.APP_SETTINGS?.robotic_import_url || `${location.protocol}//${location.hostname}:8080/import`, "_blank")}
+        size="small"
+        aria-label="Robotic Data Import"
+      >
+        🤖 Robotic Data Import
+      </Button>
+      <Button onClick={openModal} size="small" aria-label="Create new project">
+        Create
+      </Button>
+    </div>
   );
 };

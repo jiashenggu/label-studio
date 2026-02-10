@@ -398,6 +398,16 @@ export const ImportPage = ({
         >
           Upload {files.uploaded.length ? "More " : ""}Files
         </Button>
+        <span>or</span>
+        <Button
+          variant="primary"
+          look="outlined"
+          type="button"
+          onClick={() => window.open("http://127.0.0.1:8080/import", "_blank")}
+          aria-label="Robotic Data Import"
+        >
+          🤖 Robotic Data Import
+        </Button>
         {ff.isActive(ff.FF_SAMPLE_DATASETS) && (
           <SampleDatasetSelect samples={samples} sample={sample} onSampleApplied={onSampleDatasetSelect} />
         )}
